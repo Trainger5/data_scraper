@@ -1,0 +1,268 @@
+{% extends "base.html" %}
+
+{% block title %}Phone Numbers - Email Extractor Pro{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-title">
+        <h1><i class="fas fa-phone"></i> Extracted Phone Numbers</h1>
+        <p>View and filter all extracted phone numbers</p>
+    </div>
+    <div class="actions">
+        <button class="btn btn-secondary" onclick="exportPhones('csv')"><i class="fas fa-file-csv"></i> Export
+            CSV</button>
+        <button class="btn btn-secondary" onclick="exportPhones('json')"><i class="fas fa-file-code"></i> Export
+            JSON</button>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="glass-card">
+    <div class="card-header">
+        <div class="card-title"><i class="fas fa-filter"></i> Filters</div>
+    </div>
+    <div class="row">
+        <div class="col-6">
+            <div class="form-group">
+                <label class="form-label">Search Phone</label>
+                <input type="text" id="phoneSearch" class="form-control" placeholder="Search by phone number...">
+            </div>
+        </div>
+        <div class="col-6">
+            <div class="form-group">
+                <label class="form-label">Source URL</label>
+                <input type="text" id="sourceFilter" class="form-control" placeholder="Source website...">
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-12">
+            <button class="btn btn-primary" onclick="applyFilters()"><i class="fas fa-search"></i> Apply
+                Filters</button>
+            <button class="btn btn-secondary" onclick="clearFilters()"><i class="fas fa-times"></i> Clear</button>
+        </div>
+    </div>
+</div>
+
+<!-- Results -->
+<div class="glass-card">
+    <div class="card-header">
+        <div class="card-title"><i class="fas fa-database"></i> Phone Database</div>
+        <div>
+            <span class="badge badge-success" id="totalPhones">0 Total</span>
+        </div>
+    </div>
+    <div class="table-container">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Phone Number</th>
+                    <th>Business Name</th>
+                    <th>Website</th>
+                    <th>Address</th>
+                    <th>Source</th>
+                    <th>Found Date</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="phonesTableBody">
+                <tr>
+                    <td colspan="8" style="text-align: center; padding: 2rem;">
+                        <i class="fas fa-spinner fa-spin"></i> Loading phone numbers...
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem;">
+        <div id="paginationInfo">Showing 0 - 0 of 0</div>
+        <div id="paginationControls"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let currentPage = 1;
+    const perPage = 50;
+    let allPhones = [];
+    let filteredPhones = [];
+
+    document.addEventListener('DOMContentLoaded', function () {
+        loadPhones();
+    });
+
+    async function loadPhones() {
+        try {
+            const response = await fetch('/api/phones');
+            const data = await response.json();
+            allPhones = data.phones || [];
+            filteredPhones = [...allPhones];
+            displayPhones();
+        } catch (error) {
+            console.error('Error loading phones:', error);
+            document.getElementById('phonesTableBody').innerHTML = `
+            <tr><td colspan="8" style="text-align: center; color: var(--error);">
+                <i class="fas fa-exclamation-circle"></i> Error loading phone numbers
+            </td></tr>
+        `;
+        }
+    }
+
+    function applyFilters() {
+        const phoneSearch = document.getElementById('phoneSearch').value.toLowerCase();
+        const sourceFilter = document.getElementById('sourceFilter').value.toLowerCase();
+
+        filteredPhones = allPhones.filter(phone => {
+            const matchesPhone = !phoneSearch || phone.phone.toLowerCase().includes(phoneSearch);
+            const matchesSource = !sourceFilter || phone.source_url.toLowerCase().includes(sourceFilter);
+            return matchesPhone && matchesSource;
+        });
+
+        currentPage = 1;
+        displayPhones();
+    }
+
+    function clearFilters() {
+        document.getElementById('phoneSearch').value = '';
+        document.getElementById('sourceFilter').value = '';
+        filteredPhones = [...allPhones];
+        currentPage = 1;
+        displayPhones();
+    }
+
+    function displayPhones() {
+        const start = (currentPage - 1) * perPage;
+        const end = start + perPage;
+        const paginatedPhones = filteredPhones.slice(start, end);
+
+        document.getElementById('totalPhones').textContent = `${filteredPhones.length} Total`;
+
+        if (paginatedPhones.length === 0) {
+            document.getElementById('phonesTableBody').innerHTML = `
+            <tr><td colspan="8" style="text-align: center; padding: 2rem; color: var(--text-muted);">
+                <i class="fas fa-inbox"></i> No phone numbers found
+            </td></tr>
+        `;
+            document.getElementById('paginationInfo').textContent = 'Showing 0 - 0 of 0';
+            document.getElementById('paginationControls').innerHTML = '';
+            return;
+        }
+
+        const tbody = paginatedPhones.map((phone, index) => `
+        <tr>
+            <td>${start + index + 1}</td>
+            <td><strong>${phone.phone}</strong></td>
+            <td>${phone.business_name || 'NA'}</td>
+            <td>${phone.website ? `<a href="${phone.website}" target="_blank"><i class="fas fa-external-link-alt"></i> Link</a>` : 'NA'}</td>
+            <td>${phone.address || 'NA'}</td>
+            <td><a href="${phone.source_url}" target="_blank" style="color: var(--primary); text-decoration: none;">
+                ${truncateUrl(phone.source_url, 30)}
+            </a></td>
+            <td>${formatDate(phone.found_at)}</td>
+            <td>
+                <div class="btn-group" role="group">
+                    <button class="btn btn-sm btn-outline-primary" onclick="copyToClipboard('${phone.phone}')" title="Copy Phone">
+                        <i class="fas fa-copy"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="deleteRow(this)" title="Delete">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+
+        document.getElementById('phonesTableBody').innerHTML = tbody;
+
+        // Update pagination info
+        document.getElementById('paginationInfo').textContent =
+            `Showing ${start + 1} - ${Math.min(end, filteredPhones.length)} of ${filteredPhones.length}`;
+
+        // Create pagination controls
+        const totalPages = Math.ceil(filteredPhones.length / perPage);
+        let paginationHTML = '';
+
+        if (totalPages > 1) {
+            paginationHTML += `<button class="btn btn-secondary" onclick="changePage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>
+            <i class="fas fa-chevron-left"></i>
+        </button>`;
+
+            for (let i = 1; i <= totalPages; i++) {
+                if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) {
+                    paginationHTML += `<button class="btn ${i === currentPage ? 'btn-primary' : 'btn-secondary'}" onclick="changePage(${i})">${i}</button>`;
+                } else if (i === currentPage - 3 || i === currentPage + 3) {
+                    paginationHTML += '<span style="padding: 0 0.5rem;">...</span>';
+                }
+            }
+
+            paginationHTML += `<button class="btn btn-secondary" onclick="changePage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>
+            <i class="fas fa-chevron-right"></i>
+        </button>`;
+        }
+
+        document.getElementById('paginationControls').innerHTML = paginationHTML;
+    }
+
+    function changePage(page) {
+        const totalPages = Math.ceil(filteredPhones.length / perPage);
+        if (page < 1 || page > totalPages) return;
+        currentPage = page;
+        displayPhones();
+    }
+
+    function copyToClipboard(text) {
+        navigator.clipboard.writeText(text).then(() => {
+            const notif = document.createElement('div');
+            notif.textContent = 'Copied to clipboard!';
+            notif.style.cssText = 'position:fixed;top:20px;right:20px;background:#10b981;color:white;padding:1rem 1.5rem;border-radius:8px;box-shadow:0 4px 6px rgba(0,0,0,0.1);z-index:9999;animation:slideIn 0.3s ease;';
+            document.body.appendChild(notif);
+            setTimeout(() => notif.remove(), 3000);
+        });
+    }
+
+    function deleteRow(btn) {
+        if (confirm('Are you sure you want to delete this item?')) {
+            const row = btn.closest('tr');
+            row.remove();
+        }
+    }
+
+    function truncateUrl(url, maxLength) {
+        if (url.length <= maxLength) return url;
+        return url.substring(0, maxLength) + '...';
+    }
+
+    function formatDate(dateString) {
+        const date = new Date(dateString);
+        return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+    }
+
+    function exportPhones(format) {
+        const data = filteredPhones;
+        if (format === 'csv') {
+            const csv = [
+                ['Phone Number', 'Business Name', 'Website', 'Address', 'Source URL', 'Found Date'],
+                ...data.map(p => [p.phone, p.business_name || 'NA', p.website || 'NA', p.address || 'NA', p.source_url, p.found_at])
+            ].map(row => row.join(',')).join('\n');
+
+            downloadFile(csv, 'phones.csv', 'text/csv');
+        } else {
+            downloadFile(JSON.stringify(data, null, 2), 'phones.json', 'application/json');
+        }
+    }
+
+    function downloadFile(content, filename, mimeType) {
+        const blob = new Blob([content], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,50 @@
+# Crawler & Scraper Workflow
+
+This document outlines the step-by-step process of the Email Extractor's crawling engine.
+
+## 1. Initialization
+- The process starts when a user initiates a search via the API (`/api/search`).
+- A `WebCrawler` instance is created.
+- A background thread is started to run the `crawl` method so the API returns immediately.
+
+## 2. Search Phase (Discovery)
+The goal of this phase is to find relevant "Seed URLs" to start crawling.
+
+- **Tool**: `WebSearchScraper` (Selenium)
+- **Process**:
+    1.  Launches a **Headless Chrome Browser**. This mimics a real user to bypass bot detection (which caused "0 results" previously).
+    2.  Navigates to **Google Search** with the user's query (e.g., "IT Company in Mohali").
+    3.  Waits for results to load (randomized delay).
+    4.  **Extraction**: Uses multiple CSS selectors to find organic search result links, ignoring ads and Google's own links.
+    5.  **Output**: Returns a list of 10-20 relevant website URLs.
+
+## 3. Crawling Phase (Data Extraction)
+The goal is to visit each website and find contact info.
+
+- **Tool**: `WebCrawler` + `ThreadPoolExecutor` (Parallel Processing)
+- **Process**:
+    1.  **Queueing**: The Seed URLs are added to a crawl queue.
+    2.  **Parallel Execution**: The system spins up **8 worker threads** (configurable in `config.py`) to process URLs simultaneously.
+    3.  **Worker Logic** (for each URL):
+        -   **Fetch**: Downloads the page HTML using `requests`.
+        -   **Extraction**:
+            -   **Emails**: Scans text for email patterns.
+            -   **Phones**: Scans text for phone number patterns.
+        -   **Storage**:
+            -   Emails are saved to the `emails` table.
+            -   Phones are saved to the `phones` table.
+        -   **Discovery**: Finds all links (`<a>` tags) on the page.
+    4.  **Link Following Strategy**:
+        -   **Internal Links** (same domain): Followed up to `MAX_CRAWL_DEPTH` (default 2). This helps find "Contact Us" or "About" pages.
+        -   **External Links** (different domain): Limited to `MAX_EXTERNAL_LINKS` per page to prevent wandering too far.
+
+## 4. Database Storage
+Data is saved immediately as it is found.
+
+- **Emails Table**: Stores `email`, `source_url`, `domain`.
+- **Phones Table**: Stores `phone`, `source_url`.
+- **Searches Table**: Tracks overall progress (`pages_crawled`, `status`).
+
+## 5. Completion
+- When the queue is empty or `MAX_PAGES_PER_SEARCH` is reached, the crawler stops.
+- Status is updated to `completed`.

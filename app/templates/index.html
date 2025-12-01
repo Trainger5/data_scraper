@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Email Extractor Pro{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-title">
+        <h1 id="pageTitle">Web Search</h1>
+        <p id="pageSubtitle">Extract leads by searching keywords</p>
+    </div>
+    <div class="actions">
+        <button class="btn btn-secondary" onclick="exportResults('csv')"><i class="fas fa-file-csv"></i> Export
+            CSV</button>
+        <button class="btn btn-secondary" onclick="exportResults('json')"><i class="fas fa-file-code"></i> Export
+            JSON</button>
+    </div>
+</div>
+
+<!-- Search Section -->
+<div class="glass-card">
+    <!-- Web Search Pane -->
+    <div class="view-pane" id="web-pane">
+        <div class="form-group">
+            <label class="form-label">Search Query</label>
+            <div style="display: flex; gap: 1rem;">
+                <input type="text" id="webSearchInput" class="form-control" placeholder="e.g. IT Companies in New York">
+                <button class="btn btn-primary" id="webSearchBtn" onclick="startSearch('web')">
+                    <i class="fas fa-search"></i> Start
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Maps Pane -->
+    <div class="view-pane" id="maps-pane" style="display: none;">
+        <div class="row">
+            <div class="col-6">
+                <div class="form-group">
+                    <label class="form-label">Business Type</label>
+                    <input type="text" class="form-control" id="mapsBusinessType" placeholder="e.g. Restaurants">
+                </div>
+            </div>
+            <div class="col-6">
+                <div class="form-group">
+                    <label class="form-label">Location</label>
+                    <input type="text" class="form-control" id="mapsLocation" placeholder="e.g. London">
+                </div>
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Number of Pages to Scrape</label>
+            <select class="form-select" id="mapsPageCount">
+                <option value="1">1 page (~20 businesses)</option>
+                <option value="2">2 pages (~40 businesses)</option>
+                <option value="3" selected>3 pages (~60 businesses)</option>
+                <option value="5">5 pages (~100 businesses)</option>
+                <option value="10">10 pages (~200 businesses)</option>
+                <option value="custom">Custom...</option>
+            </select>
+            <input type="number" id="mapsCustomPageCount" class="form-control mt-2" style="display: none;"
+                placeholder="Enter number of pages (e.g. 20)" min="1" max="100">
+            <small class="form-text text-muted">More pages = more results but slower</small>
+        </div>
+        <button class="btn btn-primary" style="width: 100%;" id="mapsSearchBtn" onclick="startSearch('maps')">
+            <i class="fas fa-map-marked-alt"></i> Extract from Maps
+        </button>
+    </div>
+
+    <!-- Social Pane -->
+    <div class="view-pane" id="social-pane" style="display: none;">
+        <div class="form-group">
+            <label class="form-label">Platform</label>
+            <select class="form-select" id="socialPlatform">
+                <option value="linkedin">LinkedIn</option>
+                <option value="facebook">Facebook</option>
+                <option value="twitter">Twitter / X</option>
+                <option value="instagram">Instagram</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Keywords</label>
+            <div style="display: flex; gap: 1rem;">
+                <input type="text" id="socialSearchInput" class="form-control"
+                    placeholder="e.g. CEO, Marketing Manager">
+                <button class="btn btn-primary" id="social SearchBtn" onclick="startSearch('social')">
+                    <i class="fas fa-search"></i> Search Social
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Website Crawler Pane -->
+    <div class="view-pane" id="crawler-pane" style="display: none;">
+        <div class="form-group">
+            <label class="form-label">Target Website URL</label>
+            <input type="url" id="crawlerUrl" class="form-control" placeholder="https://example.com">
+            <small class="form-text text-muted">Enter the full URL including https://</small>
+        </div>
+        <div class="row">
+            <div class="col-6">
+                <div class="form-group">
+                    <label class="form-label">Max Depth</label>
+                    <select class="form-select" id="crawlerDepth">
+                        <option value="1">1 (Current page only)</option>
+                        <option value="2" selected>2 (Follow links once)</option>
+                        <option value="3">3 (Deep crawl)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="col-6">
+                <div class="form-group">
+                    <label class="form-label">Max Pages</label>
+                    <input type="number" id="crawlerMaxPages" class="form-control" value="50" min="10" max="500">
+                </div>
+            </div>
+        </div>
+        <button class="btn btn-primary" style="width: 100%;" id="crawlerBtn" onclick="startSearch('crawler')">
+            <i class="fas fa-spider"></i> Start Crawling
+        </button>
+    </div>
+
+    <!--Platform Search Pane -->
+    <div class="view-pane" id="platform-pane" style="display: none;">
+        <div class="form-group">
+            <label class="form-label">Platform Type</label>
+            <select class="form-select" id="platformType">
+                <option value="yelp">Yelp</option>
+                <option value="custom">Custom Website...</option>
+            </select>
+        </div>
+        <div class="form-group" id="platformCustomGroup" style="display: none;">
+            <label class="form-label">Custom Website</label>
+            <input type="text" id="platformTarget" class="form-control" placeholder="e.g. yellowpages.com">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Search Query</label>
+            <div style="display: flex; gap: 1rem;">
+                <input type="text" id="platformQuery" class="form-control" placeholder="e.g. Plumbers in New York">
+                <button class="btn btn-primary" id="platformBtn" onclick="startSearch('platform')">
+                    <i class="fas fa-search-plus"></i> Search
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Progress Section -->
+<div id="statusSection" class="glass-card" style="display: none;">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <div class="card-title"><i class="fas fa-sync fa-spin"></i> Extraction in Progress</div>
+        <button class="btn btn-danger btn-sm" id="stopCrawlBtn" onclick="stopCrawl()" style="padding: 0.5rem 1rem;">
+            <i class="fas fa-stop"></i> Stop
+        </button>
+    </div>
+    <div class="progress-container">
+        <div id="progressFill" class="progress-fill"></div>
+    </div>
+    <div class="d-flex justify-between text-muted">
+        <span id="statusText">Initializing...</span>
+        <span>
+            <span id="pagesCrawled">0</span> pages |
+            <span id="emailsFound">0</span> emails
+        </span>
+    </div>
+</div>
+
+<!-- Results Section -->
+<div id="resultsSection" class="glass-card" style="display: none;">
+    <div class="card-header">
+        <div class="card-title"><i class="fas fa-list"></i> Results</div>
+        <div style="display: flex; gap: 1rem;">
+            <span class="badge badge-primary" id="emailCount">0 Emails</span>
+            <span class="badge badge-success" id="phoneCount">0 Phones</span>
+        </div>
+    </div>
+    <div class="table-container">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Type</th>
+                    <th>Value</th>
+                    <th>Source</th>
+                </tr>
+            </thead>
+            <tbody id="resultsBody">
+                <!-- Results here -->
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% endblock %}

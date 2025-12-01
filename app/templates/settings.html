@@ -1,0 +1,296 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - Email Extractor Pro{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-title">
+        <h1>Settings</h1>
+        <p>Configure application behavior</p>
+    </div>
+    <button class="btn btn-primary" onclick="saveSettings()">
+        <i class="fas fa-save"></i> Save Changes
+    </button>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <!-- Network Settings -->
+        <div class="glass-card">
+            <div class="card-header">
+                <div class="card-title"><i class="fas fa-network-wired"></i> Network & Proxies</div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-check">
+                    <input type="checkbox" id="use_proxies" class="form-check-input">
+                    <span>Enable Proxy Rotation</span>
+                </label>
+                <div class="form-text">Route traffic through proxies to avoid IP bans.</div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Proxy Rotation Strategy</label>
+                <select class="form-select" id="proxy_rotation_strategy">
+                    <option value="random">Random</option>
+                    <option value="round-robin">Round Robin</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Crawler Settings -->
+        <div class="glass-card">
+            <div class="card-header">
+                <div class="card-title"><i class="fas fa-spider"></i> Crawler Configuration</div>
+            </div>
+
+            <div class="row">
+                <div class="col-6">
+                    <div class="form-group">
+                        <label class="form-label">Max Threads</label>
+                        <input type="number" class="form-control" id="max_threads" min="1" max="20">
+                        <div class="form-text">Number of concurrent crawling threads (1-20).</div>
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="form-group">
+                        <label class="form-label">Max Pages Per Search</label>
+                        <input type="number" class="form-control" id="max_pages_per_search" min="10" max="1000">
+                        <div class="form-text">Maximum pages to crawl per search (10-1000).</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-6">
+                    <div class="form-group">
+                        <label class="form-label">Request Delay (seconds)</label>
+                        <input type="number" class="form-control" id="request_delay" step="0.1" min="0">
+                        <div class="form-text">Delay between requests to be polite.</div>
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="form-group">
+                        <label class="form-label">Request Timeout (seconds)</label>
+                        <input type="number" class="form-control" id="request_timeout" min="5">
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-6">
+                    <div class="form-group mt-4">
+                        <label class="form-check">
+                            <input type="checkbox" id="headless_mode" class="form-check-input">
+                            <span>Headless Mode (Background Crawling)</span>
+                        </label>
+                        <div class="form-text">When enabled, browser runs hidden. When disabled, you can see Selenium
+                            working in real-time!</div>
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="form-group mt-4">
+                        <label class="form-check">
+                            <input type="checkbox" id="debug_mode" class="form-check-input">
+                            <span>Debug Mode (Keep Browser Open)</span>
+                        </label>
+                        <div class="form-text">Keeps the browser open after search completes for manual inspection.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-6">
+                    <div class="form-group">
+                        <label class="form-label">Default Search Engine</label>
+                        <select class="form-select" id="default_search_engine">
+                            <option value="duckduckgo">DuckDuckGo</option>
+                            <option value="google">Google</option>
+                            <option value="bing">Bing</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Proxy Management -->
+        <div class="glass-card">
+            <div class="card-header">
+                <div class="card-title"><i class="fas fa-shield-alt"></i> Proxy Management</div>
+                <button class="btn btn-primary" onclick="refreshProxies()">
+                    <i class="fas fa-sync-alt"></i> Fetch New Proxies
+                </button>
+            </div>
+
+            <div id="proxyStats" class="mb-4" style="display: flex; gap: 1rem;">
+                <div style="flex: 1; padding: 1rem; background: #eff6ff; border-radius: 8px;">
+                    <div style="color: var(--text-muted); font-size: 0.875rem;">Total Proxies</div>
+                    <div style="font-size: 1.5rem; font-weight: 600; color: var(--primary);" id="totalProxies">0</div>
+                </div>
+                <div style="flex: 1; padding: 1rem; background: #ecfdf5; border-radius: 8px;">
+                    <div style="color: var(--text-muted); font-size: 0.875rem;">Validated</div>
+                    <div style="font-size: 1.5rem; font-weight: 600; color: var(--success);" id="validatedProxies">0
+                    </div>
+                </div>
+                <div style="flex: 1; padding: 1rem; background: #f8fafc; border-radius: 8px;">
+                    <div style="color: var(--text-muted); font-size: 0.875rem;">Available</div>
+                    <div style="font-size: 1.5rem; font-weight: 600; color: var(--text-secondary);"
+                        id="availableProxies">0</div>
+                </div>
+            </div>
+
+            <div class="table-container" style="max-height: 400px; overflow-y: auto;">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Status</th>
+                            <th>Proxy Address</th>
+                        </tr>
+                    </thead>
+                    <tbody id="proxyTableBody">
+                        <tr>
+                            <td colspan="2" class="text-center text-muted">Loading proxies...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        loadSettings();
+        loadProxies();
+    });
+
+    function loadSettings() {
+        fetch('/api/settings')
+            .then(res => res.json())
+            .then(data => {
+                // Checkboxes
+                document.getElementById('use_proxies').checked = data.use_proxies;
+                document.getElementById('headless_mode').checked = data.headless_mode;
+                if (document.getElementById('debug_mode')) {
+                    document.getElementById('debug_mode').checked = data.debug_mode;
+                }
+
+                // Inputs
+                document.getElementById('max_threads').value = data.max_threads;
+                document.getElementById('max_pages_per_search').value = data.max_pages_per_search || 100;
+                document.getElementById('request_delay').value = data.request_delay;
+                document.getElementById('request_timeout').value = data.request_timeout;
+                document.getElementById('proxy_rotation_strategy').value = data.proxy_rotation_strategy;
+                document.getElementById('default_search_engine').value = data.default_search_engine;
+            })
+            .catch(err => console.error('Error loading settings:', err));
+    }
+
+    function saveSettings() {
+        const settings = {
+            use_proxies: document.getElementById('use_proxies').checked,
+            headless_mode: document.getElementById('headless_mode').checked,
+            debug_mode: document.getElementById('debug_mode') ? document.getElementById('debug_mode').checked : false,
+            max_threads: parseInt(document.getElementById('max_threads').value),
+            max_pages_per_search: parseInt(document.getElementById('max_pages_per_search').value),
+            request_delay: parseFloat(document.getElementById('request_delay').value),
+            request_timeout: parseInt(document.getElementById('request_timeout').value),
+            proxy_rotation_strategy: document.getElementById('proxy_rotation_strategy').value,
+            default_search_engine: document.getElementById('default_search_engine').value
+        };
+
+        const btn = document.querySelector('.page-header .btn-primary');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+        btn.disabled = true;
+
+        fetch('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(settings)
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    alert('Settings saved successfully!');
+                } else {
+                    alert('Error saving settings');
+                }
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            })
+            .catch(err => {
+                alert('Error saving settings: ' + err);
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            });
+    }
+
+    function loadProxies() {
+        fetch('/api/proxies')
+            .then(res => res.json())
+            .then(data => {
+                const tbody = document.getElementById('proxyTableBody');
+                const proxies = data.proxies || [];
+                const stats = data.stats || { total: 0, available: 0 };
+
+                // Update stats
+                document.getElementById('totalProxies').textContent = proxies.length;
+                const validatedCount = proxies.filter(p => p.validated).length;
+                document.getElementById('validatedProxies').textContent = validatedCount;
+                document.getElementById('availableProxies').textContent = stats.available;
+
+                // Update table
+                if (proxies.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted">No proxies found. Click "Fetch New Proxies" to get started.</td></tr>';
+                } else {
+                    tbody.innerHTML = proxies.map(p => `
+                    <tr>
+                        <td>
+                            ${p.validated
+                            ? '<span class="badge badge-success"><i class="fas fa-check-circle"></i> Validated</span>'
+                            : '<span class="badge badge-warning"><i class="fas fa-question-circle"></i> Unverified</span>'}
+                        </td>
+                        <td><code>${p.proxy}</code></td>
+                    </tr>
+                `).join('');
+                }
+            })
+            .catch(err => {
+                console.error('Error loading proxies:', err);
+                document.getElementById('proxyTableBody').innerHTML =
+                    '<tr><td colspan="2" class="text-center text-danger">Error loading proxies</td></tr>';
+            });
+    }
+
+    function refreshProxies() {
+        const btn = document.querySelector('.card-header .btn-primary');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Fetching...';
+        btn.disabled = true;
+
+        fetch('/api/proxies/refresh', {
+            method: 'POST'
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    alert('Proxies refreshed successfully! Found new proxies.');
+                    loadProxies(); // Reload the proxy list
+                } else {
+                    alert('Error refreshing proxies: ' + data.message);
+                }
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            })
+            .catch(err => {
+                alert('Error refreshing proxies: ' + err);
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            });
+    }
+</script>
+{% endblock %}

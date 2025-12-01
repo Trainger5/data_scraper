@@ -1,0 +1,321 @@
+/**
+ * Email Extractor Pro - Frontend Application
+ * Handles all UI interactions and API communication
+ */
+
+// Configuration
+const API_BASE = 'http://127.0.0.1:5000/api';
+const POLL_INTERVAL = 2000;
+
+// State
+let currentSearchId = null;
+let pollInterval = null;
+let allEmails = [];
+let currentPlatform = 'linkedin';
+
+// DOM Elements
+const navItems = document.querySelectorAll('.nav-item');
+const views = document.querySelectorAll('.view-section');
+const pageTitle = document.getElementById('page-title');
+
+// Search Inputs & Buttons
+const webSearchInput = document.getElementById('web-search-input');
+const webSearchBtn = document.getElementById('web-search-btn');
+const mapsSearchInput = document.getElementById('maps-search-input');
+const mapsSearchBtn = document.getElementById('maps-search-btn');
+const socialSearchInput = document.getElementById('social-search-input');
+const socialSearchBtn = document.getElementById('social-search-btn');
+const platformBtns = document.querySelectorAll('.platform-btn');
+
+// Shared Elements
+const progressSection = document.getElementById('progress-section');
+const resultsSection = document.getElementById('results-section');
+const progressBar = document.getElementById('progress-bar');
+const progressMessage = document.getElementById('progress-message');
+const pagesCrawled = document.getElementById('pages-crawled');
+const emailsFound = document.getElementById('emails-found');
+const resultsTbody = document.getElementById('results-tbody');
+const emailCount = document.getElementById('email-count');
+const exportCsvBtn = document.getElementById('export-csv-btn');
+const exportJsonBtn = document.getElementById('export-json-btn');
+const newSearchBtn = document.getElementById('new-search-btn');
+const historyGrid = document.getElementById('history-grid');
+const refreshHistoryBtn = document.getElementById('refresh-history-btn');
+const totalEmailsEl = document.getElementById('total-emails');
+
+// ===== INITIALIZATION =====
+document.addEventListener('DOMContentLoaded', () => {
+    loadHistory();
+});
+
+// ===== NAVIGATION =====
+navItems.forEach(item => {
+    item.addEventListener('click', () => {
+        // Update active nav
+        navItems.forEach(nav => nav.classList.remove('active'));
+        item.classList.add('active');
+
+        // Switch view
+        const viewId = item.dataset.view;
+        views.forEach(view => {
+            view.classList.remove('active');
+            if (view.id === viewId) view.classList.add('active');
+        });
+
+        // Update Title
+        pageTitle.textContent = item.querySelector('span').textContent;
+    });
+});
+
+// Platform Selector
+platformBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+        platformBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentPlatform = btn.dataset.platform;
+    });
+});
+
+// ===== SEARCH HANDLERS =====
+if (webSearchBtn) webSearchBtn.addEventListener('click', () => startSearch('web', webSearchInput.value));
+if (mapsSearchBtn) mapsSearchBtn.addEventListener('click', () => startSearch('maps', mapsSearchInput.value));
+if (socialSearchBtn) socialSearchBtn.addEventListener('click', () => startSearch('social', socialSearchInput.value, currentPlatform));
+
+// Enter key handlers
+if (webSearchInput) webSearchInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') startSearch('web', webSearchInput.value); });
+if (mapsSearchInput) mapsSearchInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') startSearch('maps', mapsSearchInput.value); });
+if (socialSearchInput) socialSearchInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') startSearch('social', socialSearchInput.value, currentPlatform); });
+
+// Shared Actions
+if (newSearchBtn) newSearchBtn.addEventListener('click', resetSearch);
+if (exportCsvBtn) exportCsvBtn.addEventListener('click', () => exportResults('csv'));
+if (exportJsonBtn) exportJsonBtn.addEventListener('click', () => exportResults('json'));
+if (refreshHistoryBtn) refreshHistoryBtn.addEventListener('click', loadHistory);
+
+// ===== CORE FUNCTIONS =====
+
+async function startSearch(type, query, platform = null) {
+    if (!query.trim()) {
+        showToast('Please enter a search topic', 'error');
+        return;
+    }
+
+    // Prepare payload
+    const payload = {
+        query: query.trim(),
+        search_type: type,
+        platform: platform
+    };
+
+    // UI Loading State
+    setLoading(true, type);
+
+    try {
+        const response = await fetch(`${API_BASE}/search`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) throw new Error('Search failed to start');
+
+        const data = await response.json();
+        currentSearchId = data.search_id;
+
+        // Show progress
+        progressSection.classList.remove('hidden');
+        resultsSection.classList.add('hidden');
+
+        // Hide search inputs temporarily
+        views.forEach(v => v.classList.add('hidden'));
+
+        startProgressPolling();
+        showToast('Extraction started!', 'success');
+
+    } catch (error) {
+        showToast(error.message, 'error');
+        setLoading(false, type);
+    }
+}
+
+function setLoading(isLoading, type) {
+    const btnMap = {
+        'web': webSearchBtn,
+        'maps': mapsSearchBtn,
+        'social': socialSearchBtn
+    };
+    const btn = btnMap[type];
+    if (!btn) return;
+
+    if (isLoading) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Starting...';
+    } else {
+        btn.disabled = false;
+        btn.innerHTML = '<span>Start Extraction</span>';
+    }
+}
+
+function startProgressPolling() {
+    if (pollInterval) clearInterval(pollInterval);
+
+    pollInterval = setInterval(async () => {
+        try {
+            const response = await fetch(`${API_BASE}/status/${currentSearchId}`);
+            const data = await response.json();
+
+            updateProgress(data);
+
+            if (data.status === 'completed' || data.status === 'error') {
+                stopProgressPolling();
+                await loadResults(currentSearchId);
+
+                // Reset UI buttons
+                setLoading(false, 'web');
+                setLoading(false, 'maps');
+                setLoading(false, 'social');
+            }
+        } catch (error) {
+            console.error('Polling error:', error);
+        }
+    }, POLL_INTERVAL);
+}
+
+function stopProgressPolling() {
+    if (pollInterval) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+    }
+}
+
+function updateProgress(data) {
+    const { pages_crawled, total_emails, status, current_url } = data;
+
+    if (pagesCrawled) pagesCrawled.textContent = pages_crawled || 0;
+    if (emailsFound) emailsFound.textContent = total_emails || 0;
+
+    const progress = Math.min((pages_crawled / 20) * 100, 95);
+    if (progressBar) progressBar.style.width = progress + '%';
+
+    if (status === 'completed') {
+        if (progressBar) progressBar.style.width = '100%';
+        if (progressMessage) progressMessage.textContent = '✅ Extraction completed!';
+    } else if (status === 'error') {
+        if (progressMessage) progressMessage.textContent = '❌ An error occurred';
+    } else if (current_url) {
+        try {
+            const urlObj = new URL(current_url);
+            if (progressMessage) progressMessage.innerHTML = `Crawling <strong>${urlObj.hostname}</strong>...`;
+        } catch {
+            if (progressMessage) progressMessage.textContent = 'Crawling...';
+        }
+    }
+}
+
+async function loadResults(searchId) {
+    try {
+        const response = await fetch(`${API_BASE}/results/${searchId}`);
+        const data = await response.json();
+
+        allEmails = data.emails || [];
+
+        // Update UI
+        if (emailCount) emailCount.textContent = allEmails.length;
+        if (progressSection) progressSection.classList.add('hidden');
+        if (resultsSection) resultsSection.classList.remove('hidden');
+
+        renderResults(allEmails);
+        loadHistory();
+
+    } catch (error) {
+        showToast('Failed to load results', 'error');
+    }
+}
+
+function renderResults(emails) {
+    if (!resultsTbody) return;
+    resultsTbody.innerHTML = '';
+
+    if (emails.length === 0) {
+        resultsTbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:2rem;">No emails found.</td></tr>`;
+        return;
+    }
+
+    emails.forEach((item, index) => {
+        const row = document.createElement('tr');
+        // Handle phone numbers if available
+        const phone = item.phone || '-';
+
+        row.innerHTML = `
+            <td>${index + 1}</td>
+            <td><strong>${item.email}</strong></td>
+            <td>${phone}</td>
+            <td><code>${item.domain}</code></td>
+            <td><a href="${item.source_url}" target="_blank">Link</a></td>
+        `;
+        resultsTbody.appendChild(row);
+    });
+}
+
+function resetSearch() {
+    currentSearchId = null;
+    allEmails = [];
+
+    if (progressSection) progressSection.classList.add('hidden');
+    if (resultsSection) resultsSection.classList.add('hidden');
+
+    // Show active view
+    views.forEach(v => v.classList.remove('hidden'));
+
+    // Reset inputs
+    if (webSearchInput) webSearchInput.value = '';
+    if (mapsSearchInput) mapsSearchInput.value = '';
+    if (socialSearchInput) socialSearchInput.value = '';
+}
+
+async function loadHistory() {
+    try {
+        const response = await fetch(`${API_BASE}/history?limit=10`);
+        const data = await response.json();
+
+        if (historyGrid) {
+            historyGrid.innerHTML = '';
+            if (data.searches && data.searches.length > 0) {
+                data.searches.forEach(search => {
+                    const card = document.createElement('div');
+                    card.className = 'history-card glass-effect';
+                    card.innerHTML = `
+                        <div class="history-query">${search.query}</div>
+                        <div class="history-stats">
+                            <span>${search.total_emails} emails</span>
+                            <span class="history-status ${search.status}">${search.status}</span>
+                        </div>
+                    `;
+                    card.addEventListener('click', () => {
+                        currentSearchId = search.id;
+                        loadResults(search.id);
+                    });
+                    historyGrid.appendChild(card);
+                });
+            }
+        }
+    } catch (error) {
+        console.error('History load failed', error);
+    }
+}
+
+async function exportResults(format) {
+    if (!currentSearchId) return;
+    window.location.href = `${API_BASE}/export/${currentSearchId}?format=${format}`;
+}
+
+function showToast(msg, type = 'info') {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.textContent = msg;
+    container.appendChild(toast);
+    setTimeout(() => container.removeChild(toast), 3000);
+}

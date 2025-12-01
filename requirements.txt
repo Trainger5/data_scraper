@@ -1,0 +1,9 @@
+flask==3.0.0
+flask-cors==4.0.0
+beautifulsoup4==4.12.2
+requests==2.31.0
+validators==0.22.0
+urllib3==2.1.0
+selenium
+webdriver-manager
+mysql-connector-python==4.0.1

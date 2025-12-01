@@ -1,0 +1,11 @@
+{
+    "use_proxies": false,
+    "max_threads": 20,
+    "max_pages_per_search": 100,
+    "request_delay": 5,
+    "request_timeout": 30,
+    "headless_mode": false,
+    "debug_mode": true,
+    "proxy_rotation_strategy": "round-robin",
+    "default_search_engine": "brave"
+}

@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Email Extractor Pro{% endblock %}</title>
+    <!-- FontAwesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    {% block extra_css %}{% endblock %}
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <a href="/" class="logo">
+                    <i class="fas fa-spider"></i>
+                    <span>Extractor Pro</span>
+                </a>
+            </div>
+
+            <!-- Search Engine Selector -->
+            <div class="sidebar-selector">
+                <label for="globalSearchEngine" class="selector-label">
+                    <i class="fas fa-search"></i> Search Engine
+                </label>
+                <select id="globalSearchEngine" class="form-select form-select-sm">
+                    <option value="duckduckgo">DuckDuckGo</option>
+                    <option value="google">Google</option>
+                    <option value="bing">Bing</option>
+                    <option value="yahoo">Yahoo</option>
+                    <option value="yandex">Yandex</option>
+                    <option value="brave">Brave Search</option>
+                    <option value="ecosia">Ecosia</option>
+                </select>
+            </div>
+
+            <nav class="sidebar-nav">
+                <div class="nav-section">
+                    <span class="nav-label">Extraction</span>
+                    <a href="/?view=web"
+                        class="nav-item {% if request.args.get('view', 'web') == 'web' and request.path == '/' %}active{% endif %}">
+                        <i class="fas fa-globe"></i> Web Search
+                    </a>
+                    <a href="/?view=maps" class="nav-item {% if request.args.get('view') == 'maps' %}active{% endif %}">
+                        <i class="fas fa-map-marker-alt"></i> Google Maps
+                    </a>
+                    <a href="/?view=social"
+                        class="nav-item {% if request.args.get('view') == 'social' %}active{% endif %}">
+                        <i class="fas fa-users"></i> Social Media
+                    </a>
+                    <a href="/?view=crawler"
+                        class="nav-item {% if request.args.get('view') == 'crawler' %}active{% endif %}">
+                        <i class="fas fa-spider"></i> Website Crawler
+                    </a>
+                    <a href="/?view=platform"
+                        class="nav-item {% if request.args.get('view') == 'platform' %}active{% endif %}">
+                        <i class="fas fa-search-plus"></i> Platform Search
+                    </a>
+                    <a href="/history" class="nav-item {% if request.path == '/history' %}active{% endif %}">
+                        <i class="fas fa-history"></i> History
+                    </a>
+                </div>
+
+                <div class="nav-section">
+                    <span class="nav-label">Database</span>
+                    <a href="/emails" class="nav-item {% if request.path == '/emails' %}active{% endif %}">
+                        <i class="fas fa-envelope"></i> Emails
+                    </a>
+                    <a href="/phones" class="nav-item {% if request.path == '/phones' %}active{% endif %}">
+                        <i class="fas fa-phone"></i> Phone Numbers
+                    </a>
+                </div>
+
+                <div class="nav-section">
+                    <span class="nav-label">System</span>
+                    <a href="/settings" class="nav-item {% if request.path == '/settings' %}active{% endif %}">
+                        <i class="fas fa-cog"></i> Settings
+                    </a>
+                    <a href="/docs" class="nav-item {% if request.path == '/docs' %}active{% endif %}">
+                        <i class="fas fa-book"></i> Documentation
+                    </a>
+                </div>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    <script>
+        // Global Search Engine Selector
+        document.addEventListener('DOMContentLoaded', function () {
+            const searchEngineSelect = document.getElementById('globalSearchEngine');
+
+            // Load from settings API (source of truth)
+            fetch('/api/settings')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.default_search_engine) {
+                        searchEngineSelect.value = data.default_search_engine;
+                        // Sync to localStorage
+                        localStorage.setItem('defaultSearchEngine', data.default_search_engine);
+                    }
+                })
+                .catch(() => {
+                    // Fallback to localStorage if API fails
+                    const savedEngine = localStorage.getItem('defaultSearchEngine') || 'duckduckgo';
+                    searchEngineSelect.value = savedEngine;
+                });
+
+            // Update settings.json when changed
+            searchEngineSelect.addEventListener('change', function () {
+                const selectedEngine = this.value;
+                localStorage.setItem('defaultSearchEngine', selectedEngine);
+
+                // Update settings via API
+                fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ default_search_engine: selectedEngine })
+                }).then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            console.log('Search engine updated to:', selectedEngine);
+                            showNotification('Search engine updated to ' + selectedEngine.toUpperCase());
+                        }
+                    });
+            });
+        });
+
+        // Simple notification function
+        function showNotification(message) {
+            const notif = document.createElement('div');
+            notif.textContent = message;
+            notif.style.cssText = 'position:fixed;top:20px;right:20px;background:#10b981;color:white;padding:1rem 1.5rem;border-radius:8px;box-shadow:0 4px 6px rgba(0,0,0,0.1);z-index:9999;animation:slideIn 0.3s ease;';
+            document.body.appendChild(notif);
+            setTimeout(() => notif.remove(), 3000);
+        }
+    </script>
+    <style>
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .sidebar-selector {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--border);
+            background: #f8fafc;
+        }
+
+        .selector-label {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .form-select-sm {
+            font-size: 0.875rem;
+            padding: 0.5rem 0.75rem;
+        }
+    </style>
+
+    {% block extra_js %}{% endblock %}
+</body>
+
+</html>

@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+{% block title %}Documentation - Email Extractor Pro{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-title">
+        <h1>Documentation</h1>
+        <p>Learn how to use Email Extractor Pro effectively</p>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="glass-card" id="intro">
+            <div class="card-header">
+                <div class="card-title">Introduction</div>
+            </div>
+            <p>Email Extractor Pro is a powerful tool designed to scrape emails and phone numbers from various sources
+                on the web. It uses advanced techniques like proxy rotation and user-agent spoofing to bypass detection.
+            </p>
+        </div>
+
+        <div class="glass-card" id="web-search">
+            <div class="card-header">
+                <div class="card-title"><i class="fas fa-globe" style="color: var(--primary);"></i> Web Search
+                    Extraction</div>
+            </div>
+            <p>Extract leads by searching keywords on popular search engines.</p>
+            <ol style="margin-left: 1.5rem; margin-top: 1rem; color: var(--text-secondary);">
+                <li>Go to the <strong>Dashboard</strong>.</li>
+                <li>Select the <strong>Web Search</strong> tab.</li>
+                <li>Choose a search engine (DuckDuckGo is recommended for best results).</li>
+                <li>Enter a query (e.g., <code>"Software companies in California" email</code>).</li>
+                <li>Click <strong>Start Search</strong>.</li>
+            </ol>
+            <div
+                style="margin-top: 1rem; padding: 1rem; background: rgba(102, 126, 234, 0.1); border-radius: 8px; border-left: 4px solid var(--primary);">
+                <strong>Tip:</strong> Use advanced search operators like <code>site:linkedin.com</code> or
+                <code>"gmail.com"</code> to refine results.
+            </div>
+        </div>
+
+        <div class="glass-card" id="maps">
+            <div class="card-header">
+                <div class="card-title"><i class="fas fa-map-marker-alt" style="color: var(--success);"></i> Google Maps
+                    Extraction</div>
+            </div>
+            <p>Target local businesses using Google Maps.</p>
+            <ol style="margin-left: 1.5rem; margin-top: 1rem; color: var(--text-secondary);">
+                <li>Select the <strong>Google Maps</strong> tab on the Dashboard.</li>
+                <li>Enter the <strong>Business Type</strong> (e.g., <code>Dentists</code>).</li>
+                <li>Enter the <strong>Location</strong> (e.g., <code>London, UK</code>).</li>
+                <li>Click <strong>Extract from Maps</strong>.</li>
+            </ol>
+            <p style="margin-top: 0.5rem;">The tool will find businesses, visit their websites, and extract contact
+                info.</p>
+        </div>
+
+        <div class="glass-card" id="social">
+            <div class="card-header">
+                <div class="card-title"><i class="fas fa-users" style="color: var(--accent);"></i> Social Media
+                    Extraction</div>
+            </div>
+            <p>Find profiles and contact info from social networks.</p>
+            <ol style="margin-left: 1.5rem; margin-top: 1rem; color: var(--text-secondary);">
+                <li>Select the <strong>Social Media</strong> tab.</li>
+                <li>Choose a platform (LinkedIn, Twitter, etc.).</li>
+                <li>Enter keywords (e.g., <code>CEO Tech Startup</code>).</li>
+                <li>Click <strong>Search Social</strong>.</li>
+            </ol>
+        </div>
+
+        <div class="glass-card" id="settings">
+            <div class="card-header">
+                <div class="card-title"><i class="fas fa-cog" style="color: var(--text-secondary);"></i> Configuration
+                </div>
+            </div>
+            <p>Customize the behavior of the scraper in the <strong>Settings</strong> page.</p>
+            <ul style="margin-left: 1.5rem; margin-top: 1rem; color: var(--text-secondary);">
+                <li><strong>Proxies:</strong> Enable to hide your IP. Requires <code>proxies.txt</code> file.</li>
+                <li><strong>Threads:</strong> Increase for faster speed, decrease for stability.</li>
+                <li><strong>Headless Mode:</strong> Run browser invisibly (faster).</li>
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}
