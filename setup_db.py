@@ -1,4 +1,4 @@
-from database import Database
+from app.database import Database
 
 def setup():
     print("Initializing database...")
