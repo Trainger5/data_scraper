@@ -97,9 +97,12 @@ class WebCrawler:
             'search_id': search_id,
             'query': query,
             'emails': [],
+            'phones': [],
             'pages_crawled': 0,
             'status': 'running'
         }
+        email_set = set()
+        phone_set = set()
         
         try:
             # Step 1: Search for relevant URLs
@@ -138,7 +141,7 @@ class WebCrawler:
                             print(f"  [{idx+1}] 🏢 {business.get('name', 'Unknown')}")
                         
                         # Also save phone/email to respective tables for backward compatibility
-                        if business.get('phone'):
+                        if scrape_phones and business.get('phone'):
                             if self.db.add_phone(
                                 search_id, 
                                 business['phone'], 
@@ -149,7 +152,7 @@ class WebCrawler:
                             ):
                                 phone_count += 1
                         
-                        if business.get('email'):
+                        if scrape_emails and business.get('email'):
                             domain = self.email_extractor.get_domain(business['email'])
                             if self.db.add_email(
                                 search_id, 
@@ -163,11 +166,16 @@ class WebCrawler:
                                 email_count += 1
                     
                     # Mark search as completed
-                    self.db.update_search_status(search_id, 'completed', 0, email_count + phone_count)
+                    total_records = 0
+                    if scrape_emails:
+                        total_records += email_count
+                    if scrape_phones:
+                        total_records += phone_count
+                    self.db.update_search_status(search_id, 'completed', 0, total_records)
                     
                     results['status'] = 'completed'
-                    results['emails'] = [b['email'] for b in business_data if b.get('email')]
-                    results['phones'] = [b['phone'] for b in business_data if b.get('phone')]
+                    results['emails'] = [b['email'] for b in business_data if b.get('email')] if scrape_emails else []
+                    results['phones'] = [b['phone'] for b in business_data if b.get('phone')] if scrape_phones else []
                     results['businesses'] = business_data
                     
                     print(f"\n✓ Saved {business_count} businesses, {email_count} emails, and {phone_count} phones to database")
@@ -229,7 +237,7 @@ class WebCrawler:
                                     print(f"  [{idx+1}] 🏢 {business.get('name', 'Unknown')}")
                                 
                                 # Also save phone to phones table for backward compatibility
-                                if business.get('phone'):
+                                if scrape_phones and business.get('phone'):
                                     if self.db.add_phone(
                                         search_id, 
                                         business['phone'], 
@@ -306,6 +314,7 @@ class WebCrawler:
             import threading
             queue_lock = threading.Lock()
             search_finished = threading.Event()
+            stop_requested = threading.Event()
             
             # Callback to handle new results from search
             def on_search_result(url):
@@ -321,8 +330,13 @@ class WebCrawler:
 
             # Callback to check if we should stop
             def stop_check():
+                if stop_requested.is_set():
+                    return True
                 status = self.db.get_search_status(search_id)
-                return status == 'stopped'
+                if status and status.get('status') == 'stopped':
+                    stop_requested.set()
+                    return True
+                return False
 
             # Run search in a background thread so we can process results immediately
             def run_search_thread():
@@ -358,7 +372,6 @@ class WebCrawler:
             search_thread.start()
             
             crawled_count = 0
-            email_set = set()
             
             import concurrent.futures
             
@@ -416,26 +429,27 @@ class WebCrawler:
                             page_emails, page_phones, new_links = future.result()
                             
                             # Show emails to user FIRST (print to console)
-                            if page_emails:
+                            if scrape_emails and page_emails:
                                 for email in page_emails:
                                     print(f"  ✓ Email found: {email}")
                             
                             # Show phones to user FIRST (print to console)
-                            if page_phones:
+                            if scrape_phones and page_phones:
                                 for phone in page_phones:
                                     print(f"  ✓ Phone found: {phone}")
                             
                             # THEN save emails to database
-                            if page_emails:
+                            if scrape_emails and page_emails:
                                 for email in page_emails:
                                     domain = self.email_extractor.get_domain(email)
                                     if self.db.add_email(search_id, email, url, domain):
                                         email_set.add(email)
                             
                             # THEN save phones to database
-                            if page_phones:
+                            if scrape_phones and page_phones:
                                 for phone in page_phones:
-                                    self.db.add_phone(search_id, phone, url)
+                                    if self.db.add_phone(search_id, phone, url):
+                                        phone_set.add(phone)
                             
                             # Add new links to queue if depth allows
                             if depth < max_depth:
@@ -449,7 +463,8 @@ class WebCrawler:
                             
                         # Update progress and database status periodically
                         if crawled_count % 5 == 0:
-                            self.db.update_search_status(search_id, 'running', crawled_count, len(email_set), url)
+                            total_records = len(email_set) + len(phone_set)
+                            self.db.update_search_status(search_id, 'running', crawled_count, total_records, url)
                             if progress_callback:
                                 progress_callback(search_id, f"Crawled {crawled_count} pages...", int((crawled_count / (effective_max_pages if effective_max_pages != float('inf') else 1000)) * 100))
             
@@ -458,12 +473,17 @@ class WebCrawler:
             # Ideally we should signal it to stop via stop_check, which we do.
             search_thread.join(timeout=1.0) 
             
-            results['status'] = 'completed'
             results['pages_crawled'] = crawled_count
-            results['emails'] = list(email_set)
+            results['emails'] = list(email_set) if scrape_emails else []
+            results['phones'] = list(phone_set) if scrape_phones else []
+            total_records = len(email_set) + len(phone_set)
             
-            # Final update
-            self.db.update_search_status(search_id, 'completed', crawled_count, len(email_set))
+            if stop_requested.is_set():
+                results['status'] = 'stopped'
+                self.db.update_search_status(search_id, 'stopped', crawled_count, total_records)
+            else:
+                results['status'] = 'completed'
+                self.db.update_search_status(search_id, 'completed', crawled_count, total_records)
             
             if progress_callback:
                 progress_callback(search_id, 'Completed!', 100)
@@ -471,7 +491,8 @@ class WebCrawler:
         except Exception as e:
             results['status'] = 'error'
             results['error'] = str(e)
-            self.db.update_search_status(search_id, 'error', results['pages_crawled'], len(results['emails']), error_message=str(e))
+            total_records = len(email_set) + len(phone_set)
+            self.db.update_search_status(search_id, 'error', results['pages_crawled'], total_records, error_message=str(e))
             print(f"\n✗ Crawl error: {e}")
             import traceback
             traceback.print_exc()

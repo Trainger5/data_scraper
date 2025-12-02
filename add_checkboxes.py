@@ -11,10 +11,7 @@ with open('app/templates/base.html', 'r', encoding='utf-8') as f:
 # The HTML to insert
 checkbox_html = '''
             <!-- Data Type Selection -->
-            <div class="sidebar-selector" style="border-top: 1px solid var(--border);">
-                <label class="selector-label" style="margin-bottom: 0.5rem;">
-                    <i class="fas fa-filter"></i> Scrape Data
-                </label>
+            <div class="sidebar-selector" style="border-top: 1px solid var(--border);padding:0px;">
                 <div class="form-check">
                     <input class="form-check-input" type="checkbox" id="scrapeEmails" checked>
                     <label class="form-check-label" for="scrapeEmails" style="font-size: 0.85rem;">
