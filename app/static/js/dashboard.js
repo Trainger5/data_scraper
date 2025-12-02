@@ -201,9 +201,12 @@ function startSearch(type) {
         const query = document.getElementById('socialSearchInput').value;
         if (!query.trim()) return alert('Please enter a search query');
         const platform = document.getElementById('socialPlatform').value;
+        const engine = document.getElementById('globalSearchEngine')?.value || 'duckduckgo';
         payload.query = query;
         payload.platform = platform;
-        payload.engine = 'duckduckgo';
+        payload.engine = engine;
+        payload.scrape_emails = scrapeEmails;
+        payload.scrape_phones = scrapePhones;
         if (isInfinite) payload.max_pages = -1;
         btnId = 'socialSearchBtn';
     }

@@ -7,5 +7,5 @@
     "headless_mode": false,
     "debug_mode": true,
     "proxy_rotation_strategy": "round-robin",
-    "default_search_engine": "brave"
+    "default_search_engine": "duckduckgo"
 }
