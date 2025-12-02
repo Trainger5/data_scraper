@@ -40,6 +40,20 @@
                 </select>
             </div>
 
+            <!-- Infinite Scraping Toggle -->
+            <div class="sidebar-selector" style="border-top: 1px solid var(--border);">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="globalInfiniteScraping">
+                    <label class="form-check-label selector-label" for="globalInfiniteScraping"
+                        style="margin-bottom: 0;">
+                        <i class="fas fa-infinity"></i> Infinite Scraping
+                    </label>
+                </div>
+                <small class="text-muted" style="font-size: 0.7rem; display: block; margin-top: 0.25rem;">
+                    Run until stopped manually
+                </small>
+            </div>
+
             <nav class="sidebar-nav">
                 <div class="nav-section">
                     <span class="nav-label">Extraction</span>
@@ -181,6 +195,23 @@
             padding: 0.5rem 0.75rem;
         }
     </style>
+    <script>
+        // Infinite Scraping Logic
+        document.addEventListener('DOMContentLoaded', function () {
+            const infiniteToggle = document.getElementById('globalInfiniteScraping');
+            if (infiniteToggle) {
+                const isEnabled = localStorage.getItem('infiniteScraping') === 'true';
+                infiniteToggle.checked = isEnabled;
+
+                infiniteToggle.addEventListener('change', function () {
+                    localStorage.setItem('infiniteScraping', this.checked);
+                    if (typeof showNotification === 'function') {
+                        showNotification(this.checked ? 'Infinite Scraping ENABLED' : 'Infinite Scraping DISABLED');
+                    }
+                });
+            }
+        });
+    </script>
 
     {% block extra_js %}{% endblock %}
 </body>

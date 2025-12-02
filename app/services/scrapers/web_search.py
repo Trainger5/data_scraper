@@ -75,27 +75,117 @@ class WebSearchScraper:
         self.driver = webdriver.Chrome(options=chrome_options)
         
         print("✓ Chrome browser initialized for Web Search (incognito)")
+
+    def _click_next_page(self, engine):
+        """
+        Generic method to find and click the 'Next' button for various engines.
+        Returns True if successful, False otherwise.
+        """
+        if not self.driver:
+            return False
+            
+        selectors = {
+            'google': [
+                "a#pnnext",                 # Standard Desktop
+                "a[aria-label='Next page']", # Modern/Mobile
+                "a[aria-label='Next']",
+                "table#nav td.b:last-child a" # Old school
+            ],
+            'bing': [
+                "a.sb_pagN",
+                "a[title='Next page']",
+                "li.b_pag a.sb_pagN"
+            ],
+            'yahoo': [
+                "a.next",
+                "a[title='Next']"
+            ],
+            'brave': [
+                "button.show-more-btn",      # New Brave "Show more" button
+                "a.pagination-next-btn",     # Standard pagination
+                "button.footer__more-btn",   # Older "Load more"
+                "div.pagination a.next",
+                "button[type='button'].btn"  # Generic button at bottom
+            ],
+            'duckduckgo': [
+                "a.result--more__btn",
+                "button#more-results",
+                "a.result--more__btn"
+            ],
+            'ecosia': [
+                "a.pagination-next",
+                "a[aria-label='Next page']"
+            ]
+        }
+        
+        engine_selectors = selectors.get(engine, [])
+        
+        # 1. Try specific CSS selectors
+        for selector in engine_selectors:
+            try:
+                elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
+                for element in elements:
+                    if element.is_displayed() and element.is_enabled():
+                        # Verify it's likely a next button (not some other button)
+                        text = element.text.lower()
+                        if 'more' in text or 'next' in text or 'load' in text or not text:
+                            self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", element)
+                            time.sleep(1)
+                            try:
+                                self.driver.execute_script("arguments[0].click();", element)
+                            except:
+                                element.click()
+                            print(f"  ➡ Clicking 'Next' page for {engine} (Selector: {selector})...")
+                            time.sleep(random.uniform(2, 4))
+                            return True
+            except Exception as e:
+                continue
+
+        # 2. Fallback: Try finding by text "Next" or "More results"
+        try:
+            xpath_selectors = [
+                "//button[contains(text(), 'Show more')]",
+                "//button[contains(text(), 'More results')]",
+                "//a[contains(text(), 'Next')]",
+                "//span[contains(text(), 'Next')]/.."
+            ]
+            for xpath in xpath_selectors:
+                elements = self.driver.find_elements(By.XPATH, xpath)
+                for element in elements:
+                    if element.is_displayed() and element.is_enabled():
+                        self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", element)
+                        time.sleep(1)
+                        try:
+                            self.driver.execute_script("arguments[0].click();", element)
+                        except:
+                            element.click()
+                        print(f"  ➡ Clicking 'Next' page for {engine} (XPath: {xpath})...")
+                        time.sleep(random.uniform(2, 4))
+                        return True
+        except Exception as e:
+            print(f"  (Debug) Fallback click failed: {e}")
+
+        print(f"  ⚠ Could not find 'Next' button for {engine}. Stopping pagination.")
+        return False
     
-    def search(self, query, max_results=20, engine='duckduckgo'):
+    def search(self, query, max_results=20, engine='duckduckgo', on_result=None, stop_check=None):
         """Main search method - dispatches to specific engine"""
         engine = engine.lower()
+        
+        # Dispatch to appropriate method
         if engine == 'google':
-            return self.search_google(query, max_results)
+            return self.search_google(query, max_results, on_result, stop_check)
         elif engine == 'bing':
-            return self.search_bing(query, max_results)
+            return self.search_bing(query, max_results, on_result, stop_check)
         elif engine == 'yahoo':
-            return self.search_yahoo(query, max_results)
-        elif engine == 'yandex':
-            return self.search_yandex(query, max_results)
+            return self.search_yahoo(query, max_results, on_result, stop_check)
         elif engine == 'brave':
-            return self.search_brave(query, max_results)
-        elif engine == 'ecosia':
-            return self.search_ecosia(query, max_results)
+            return self.search_brave(query, max_results, on_result, stop_check)
         else:
-            return self.search_duckduckgo(query, max_results)
+            return self.search_duckduckgo(query, max_results, on_result, stop_check)
 
-    def search_duckduckgo(self, query, max_results=20):
-        """Search DuckDuckGo using Selenium (More reliable/lenient than Google)"""
+    def search_duckduckgo(self, query, max_results=20, on_result=None, stop_check=None):
+        """Search DuckDuckGo using Selenium with Pagination/Infinite Scroll"""
         if not self.driver:
             self.setup_driver()
         
@@ -106,86 +196,48 @@ class WebSearchScraper:
             print(f"🦆 Searching DuckDuckGo for: '{query}'")
             print(f"{'='*60}\n")
             
-            # Navigate to DuckDuckGo
             self.driver.get(f"https://duckduckgo.com/?q={query.replace(' ', '+')}&t=h_&ia=web")
             
-            # Wait for results to load (up to 15 seconds)
-            print("⏳ Waiting for results to load...")
+            # Wait for results
             try:
                 WebDriverWait(self.driver, 15).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, "div.react-results--main, div#links, div.results"))
                 )
-                print("✓ Results container loaded")
-            except Exception as e:
-                print(f"⚠ Timeout waiting for results: {e}")
+            except:
+                pass
             
-            # Scroll to load more results
-            last_height = self.driver.execute_script("return document.body.scrollHeight")
-            for i in range(3):
+            while len(links) < max_results:
+                # Scroll to bottom
                 self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2) # Allow time for dynamic content to load
-                new_height = self.driver.execute_script("return document.body.scrollHeight")
-                if new_height == last_height:
-                    break
-                last_height = new_height
-            
-            # Find results - Updated DuckDuckGo selectors (2024)
-            selectors = [
-                "a[data-testid='result-title-a']",   # Modern DDG
-                "article h2 a",                       # Newer layout
-                "div.result__body h2 a",              # Classic DDG
-                "div.react-results--main li a[data-testid='result-title-a']", # Specific container
-                "h2 a.result__a"                      # Older Classic
-            ]
-            
-            results = []
-            for selector in selectors:
-                try:
+                time.sleep(2)
+                
+                # Try clicking "More Results" if available
+                self._click_next_page('duckduckgo')
+                
+                # Scrape
+                selectors = ["a[data-testid='result-title-a']", "article h2 a", "div.result__body h2 a"]
+                current_count = len(links)
+                
+                for selector in selectors:
                     elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
-                    if elements:
-                        print(f"Found {len(elements)} elements with selector: {selector}")
-                        results.extend(elements)
-                except Exception as e:
-                    print(f"Selector {selector} failed: {e}")
-            
-            # Deduplicate elements based on href
-            unique_results = []
-            seen_hrefs = set()
-            for el in results:
-                try:
-                    href = el.get_attribute('href')
-                    if href and href not in seen_hrefs:
-                        seen_hrefs.add(href)
-                        unique_results.append(el)
-                except:
-                    pass
-            
-            print(f"Found {len(unique_results)} unique potential results...")
-            
-            for a in unique_results:
-                try:
-                    href = a.get_attribute('href')
+                    for el in elements:
+                        try:
+                            href = el.get_attribute('href')
+                            if href and validators.url(href) and 'duckduckgo' not in href:
+                                if href not in links:
+                                    links.append(href)
+                        except:
+                            continue
+                
+                if len(links) >= max_results:
+                    break
                     
-                    if not href:
-                        continue
-                        
-                    # Filter out ads, internal links, and common aggregators
-                    skip_domains = ['duckduckgo.com', 'yandex', 'facebook.com/l.php', 
-                                   'google.com/url', 'bing.com/ck', 't.co', 'bit.ly', 'microsoft.com']
-                    if any(domain in href for domain in skip_domains):
-                        continue
-                        
-                    # Basic validation
-                    if validators.url(href) and href.startswith('http'):
-                        if href not in links:
-                            links.append(href)
-                            print(f"  [OK] Found: {href[:80]}")
-                            
-                    if len(links) >= max_results:
-                        break
-                        
-                except Exception as e:
-                    continue
+                # If no new links found after scroll and click attempt, stop
+                if len(links) == current_count:
+                    print("  ⚠ No new results found, stopping.")
+                    break
+                    
+                print(f"  ✓ Found {len(links)} links so far...")
             
             print(f"\n[OK] Extracted {len(links)} organic results from DuckDuckGo")
             
@@ -204,11 +256,12 @@ class WebSearchScraper:
         return links
 
     def search_google(self, query, max_results=20):
-        """Search Google using Selenium"""
+        """Search Google using Selenium with Pagination"""
         if not self.driver:
             self.setup_driver()
         
         links = []
+        page = 1
         
         try:
             print(f"\n{'='*60}")
@@ -216,7 +269,7 @@ class WebSearchScraper:
             print(f"{'='*60}\n")
             
             # Navigate to Google
-            self.driver.get(f"https://www.google.com/search?q={query.replace(' ', '+')}&num={max_results+10}")
+            self.driver.get(f"https://www.google.com/search?q={query.replace(' ', '+')}&num=100") # Try to get 100 results first
             
             # Wait for results
             print("⏳ Waiting for results to load...")
@@ -228,7 +281,7 @@ class WebSearchScraper:
             except Exception as e:
                 print(f"⚠ Timeout waiting for results: {e}")
             
-            # Handle cookie consent if present (basic attempt)
+            # Handle cookie consent
             try:
                 consent_buttons = self.driver.find_elements(By.XPATH, "//button[contains(text(), 'Accept all') or contains(text(), 'I agree')]")
                 if consent_buttons:
@@ -237,60 +290,50 @@ class WebSearchScraper:
             except:
                 pass
             
-            # Scroll a bit
-            self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
-            time.sleep(1)
-            
-            # Find results - Google selectors
-            # Google changes selectors often, so we try multiple common ones
-            selectors = [
-                "div.g div.yuRUbf a",  # Common desktop
-                "div.g h3 a",          # Older desktop
-                "div#search div.g a",  # Generic
-                "a[jsname='UWckNb']",  # Mobile/Modern
-                "div.g a[href^='http']" # Fallback
-            ]
-            
-            results = []
-            for selector in selectors:
-                elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
-                if elements:
-                    print(f"Found {len(elements)} elements with selector: {selector}")
-                    # Filter elements that have h3 child (usually the title) to avoid random links
-                    valid_elements = []
+            while len(links) < max_results:
+                # Scroll to bottom to ensure all lazy-loaded elements are visible
+                self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(1)
+                
+                # Find results
+                selectors = [
+                    "div.g div.yuRUbf a",
+                    "div.g h3 a",
+                    "div#search div.g a",
+                    "a[jsname='UWckNb']"
+                ]
+                
+                current_page_links = []
+                for selector in selectors:
+                    elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
                     for el in elements:
                         try:
-                            if el.find_elements(By.TAG_NAME, 'h3') or el.find_elements(By.TAG_NAME, 'span'):
-                                valid_elements.append(el)
+                            href = el.get_attribute('href')
+                            if href and validators.url(href) and href.startswith('http'):
+                                if 'google.com' not in href and 'googleadservices' not in href:
+                                    if href not in links and href not in current_page_links:
+                                        current_page_links.append(href)
                         except:
-                            valid_elements.append(el)
-                    
-                    results.extend(valid_elements)
-            
-            print(f"Found {len(results)} potential results...")
-            
-            for a in results:
-                try:
-                    href = a.get_attribute('href')
-                    
-                    if not href:
-                        continue
-                        
-                    # Filter out ads and internal links
-                    if 'google.com' in href or 'googleadservices' in href:
-                        continue
-                        
-                    # Basic validation
-                    if validators.url(href) and href.startswith('http'):
-                        if href not in links:
-                            links.append(href)
-                            print(f"  ✓ Found: {href}")
-                            
+                            continue
+                
+                # Add new links
+                for link in current_page_links:
                     if len(links) >= max_results:
                         break
-                        
-                except Exception as e:
-                    continue
+                    links.append(link)
+                    print(f"  ✓ Found: {link[:60]}...")
+                
+                print(f"  -- Page {page}: Found {len(current_page_links)} new links (Total: {len(links)})")
+                
+                if len(links) >= max_results:
+                    break
+                    
+                # Try to go to next page
+                if not self._click_next_page('google'):
+                    print("  ⚠ No more pages or 'Next' button not found.")
+                    break
+                
+                page += 1
             
             print(f"\n✓ Extracted {len(links)} organic results from Google")
             
@@ -309,66 +352,50 @@ class WebSearchScraper:
         return links
 
     def search_bing(self, query, max_results=20):
-        """Search Bing using Selenium"""
+        """Search Bing using Selenium with Pagination"""
         if not self.driver:
             self.setup_driver()
         
         links = []
+        page = 1
         
         try:
             print(f"\n{'='*60}")
             print(f"🅱️ Searching Bing for: '{query}'")
             print(f"{'='*60}\n")
             
-            # Navigate to Bing
             self.driver.get(f"https://www.bing.com/search?q={query.replace(' ', '+')}")
+            time.sleep(3)
             
-            # Wait for results
-            time.sleep(random.uniform(3, 5))
-            
-            # Scroll
-            self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
-            
-            # Find results - Bing selectors
-            selectors = [
-                "li.b_algo h2 a",
-                "li.b_algo div.b_title a"
-            ]
-            
-            results = []
-            for selector in selectors:
-                elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
-                if elements:
-                    print(f"Found {len(elements)} elements with selector: {selector}")
-                    results.extend(elements)
-                    if len(results) >= max_results:
-                        break
-            
-            print(f"Found {len(results)} potential results...")
-            
-            for a in results:
-                try:
-                    href = a.get_attribute('href')
-                    
-                    if not href:
-                        continue
-                        
-                    # Filter out ads and internal links
-                    if 'bing.com' in href or 'microsoft.com' in href:
-                        continue
-                        
-                    # Basic validation
-                    if validators.url(href) and href.startswith('http'):
-                        if href not in links:
-                            links.append(href)
-                            print(f"  ✓ Found: {href}")
-                            
-                    if len(links) >= max_results:
-                        break
-                        
-                except Exception as e:
-                    continue
+            while len(links) < max_results:
+                self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(1)
+                
+                selectors = ["li.b_algo h2 a", "li.b_algo div.b_title a"]
+                current_page_links = []
+                
+                for selector in selectors:
+                    elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
+                    for el in elements:
+                        try:
+                            href = el.get_attribute('href')
+                            if href and validators.url(href) and 'bing.com' not in href:
+                                if href not in links and href not in current_page_links:
+                                    current_page_links.append(href)
+                        except:
+                            continue
+                
+                for link in current_page_links:
+                    if len(links) >= max_results: break
+                    links.append(link)
+                    print(f"  ✓ Found: {link[:60]}...")
+                
+                if len(links) >= max_results: break
+                
+                if not self._click_next_page('bing'):
+                    print("  ⚠ No more pages.")
+                    break
+                page += 1
             
             print(f"\n✓ Extracted {len(links)} organic results from Bing")
             
@@ -387,11 +414,12 @@ class WebSearchScraper:
         return links
 
     def search_yahoo(self, query, max_results=20):
-        """Search Yahoo using Selenium"""
+        """Search Yahoo using Selenium with Pagination"""
         if not self.driver:
             self.setup_driver()
         
         links = []
+        page = 1
         
         try:
             print(f"\n{'='*60}")
@@ -399,23 +427,35 @@ class WebSearchScraper:
             print(f"{'='*60}\n")
             
             self.driver.get(f"https://search.yahoo.com/search?p={query.replace(' ', '+')}")
-            time.sleep(random.uniform(3, 5))
+            time.sleep(3)
             
-            self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
-            
-            # Yahoo uses different selectors
-            results = self.driver.find_elements(By.CSS_SELECTOR, "div.dd.algo a")
-            
-            for result in results:
-                try:
-                    url = result.get_attribute('href')
-                    if url and validators.url(url) and 'yahoo.com' not in url:
-                        links.append(url)
-                    if len(links) >= max_results:
-                        break
-                except:
-                    continue
+            while len(links) < max_results:
+                self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(1)
+                
+                results = self.driver.find_elements(By.CSS_SELECTOR, "div.dd.algo a")
+                current_page_links = []
+                
+                for result in results:
+                    try:
+                        url = result.get_attribute('href')
+                        if url and validators.url(url) and 'yahoo.com' not in url:
+                            if url not in links and url not in current_page_links:
+                                current_page_links.append(url)
+                    except:
+                        continue
+                
+                for link in current_page_links:
+                    if len(links) >= max_results: break
+                    links.append(link)
+                    print(f"  ✓ Found: {link[:60]}...")
+                
+                if len(links) >= max_results: break
+                
+                if not self._click_next_page('yahoo'):
+                    print("  ⚠ No more pages.")
+                    break
+                page += 1
             
             print(f"\n✓ Extracted {len(links)} organic results from Yahoo")
             
@@ -479,35 +519,63 @@ class WebSearchScraper:
                 
         return links
 
-    def search_brave(self, query, max_results=20):
-        """Search Brave Search using Selenium"""
+    def search_brave(self, query, max_results=20, on_result=None, stop_check=None):
+        """Search Brave Search using Selenium with Pagination"""
         if not self.driver:
             self.setup_driver()
         
         links = []
+        page = 1
+        is_infinite = (max_results == -1)
+        target_count = float('inf') if is_infinite else max_results
         
         try:
             print(f"\n{'='*60}")
-            print(f"🦁 Searching Brave for: '{query}'")
+            print(f"🦁 Searching Brave for: '{query}' (Target: {'Infinite' if is_infinite else max_results})")
             print(f"{'='*60}\n")
             
             self.driver.get(f"https://search.brave.com/search?q={query.replace(' ', '+')}")
-            time.sleep(random.uniform(3, 5))
+            time.sleep(3)
             
-            self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
-            
-            results = self.driver.find_elements(By.CSS_SELECTOR, "div.snippet a")
-            
-            for result in results:
-                try:
-                    url = result.get_attribute('href')
-                    if url and validators.url(url) and 'brave.com' not in url:
-                        links.append(url)
-                    if len(links) >= max_results:
-                        break
-                except:
-                    continue
+            while len(links) < target_count:
+                # Check stop signal
+                if stop_check and stop_check():
+                    print("  🛑 Stop signal received. Halting search.")
+                    break
+
+                self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(1)
+                
+                results = self.driver.find_elements(By.CSS_SELECTOR, "div.snippet a")
+                current_page_links = []
+                
+                for result in results:
+                    try:
+                        url = result.get_attribute('href')
+                        if url and validators.url(url) and 'brave.com' not in url:
+                            if url not in links and url not in current_page_links:
+                                current_page_links.append(url)
+                                # Stream result immediately
+                                if on_result:
+                                    on_result(url)
+                    except:
+                        continue
+                
+                for link in current_page_links:
+                    if len(links) >= target_count: break
+                    links.append(link)
+                    print(f"  ✓ Found: {link[:60]}...")
+                
+                print(f"  -- Page {page}: Found {len(current_page_links)} new links. Total: {len(links)}/{'∞' if is_infinite else max_results}")
+                
+                if len(links) >= target_count: 
+                    print("  ✓ Target result count reached. Stopping.")
+                    break
+                
+                if not self._click_next_page('brave'):
+                    print("  ⚠ No more pages.")
+                    break
+                page += 1
             
             print(f"\n✓ Extracted {len(links)} organic results from Brave")
             

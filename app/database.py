@@ -161,6 +161,13 @@ class Database:
             if not cursor.fetchone():
                 cursor.execute("ALTER TABLE emails ADD COLUMN address TEXT")
                 print("Added address to emails")
+
+            # Add error_message to searches table
+            cursor.execute("SHOW COLUMNS FROM searches LIKE 'error_message'")
+            if not cursor.fetchone():
+                cursor.execute("ALTER TABLE searches ADD COLUMN error_message TEXT")
+                print("Added error_message to searches")
+
             
             # Add business columns to phones table
             cursor.execute("SHOW COLUMNS FROM phones LIKE 'business_name'")
@@ -198,7 +205,7 @@ class Database:
         conn.close()
         return search_id
     
-    def update_search_status(self, search_id, status, pages_crawled=None, total_emails=None, current_url=None):
+    def update_search_status(self, search_id, status, pages_crawled=None, total_emails=None, current_url=None, error_message=None):
         """Update search status"""
         conn = self.get_connection()
         cursor = conn.cursor()
@@ -217,8 +224,12 @@ class Database:
         if current_url is not None:
             update_parts.append('current_url = %s')
             params.append(current_url)
+            
+        if error_message is not None:
+            update_parts.append('error_message = %s')
+            params.append(error_message)
         
-        if status == 'completed':
+        if status == 'completed' or status == 'error':
             update_parts.append('completed_at = %s')
             params.append(datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
             # Clear current_url when completed

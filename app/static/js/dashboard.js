@@ -114,67 +114,60 @@ function startSearch(type) {
     let payload = { search_type: type };
     let btnId = '';
 
+    // Global Infinite Toggle
+    const isInfinite = document.getElementById('globalInfiniteScraping')?.checked;
+
     if (type === 'web') {
         const query = document.getElementById('webSearchInput').value;
         if (!query.trim()) return alert('Please enter a search query');
-
         const engine = document.getElementById('globalSearchEngine')?.value || 'duckduckgo';
-
         payload.query = query;
         payload.engine = engine;
+        if (isInfinite) payload.max_pages = -1;
         btnId = 'webSearchBtn';
     }
     else if (type === 'maps') {
         const business = document.getElementById('mapsBusinessType').value;
         const location = document.getElementById('mapsLocation').value;
-
         if (!business.trim() || !location.trim()) return alert('Please enter both business type and location');
-
         const engine = document.getElementById('globalSearchEngine')?.value || 'google';
-
         let pageCount = document.getElementById('mapsPageCount')?.value;
-
         if (pageCount === 'custom') {
             pageCount = parseInt(document.getElementById('mapsCustomPageCount')?.value);
             if (!pageCount || pageCount < 1) return alert('Please enter a valid number of pages (minimum 1)');
         } else {
             pageCount = parseInt(pageCount) || 3;
         }
-
         payload.query = `${business} in ${location}`;
         payload.engine = engine;
         payload.page_count = pageCount;
+        if (isInfinite) payload.max_pages = -1;
         btnId = 'mapsSearchBtn';
     }
     else if (type === 'social') {
         const query = document.getElementById('socialSearchInput').value;
         if (!query.trim()) return alert('Please enter a search query');
-
         const platform = document.getElementById('socialPlatform').value;
-
         payload.query = query;
         payload.platform = platform;
         payload.engine = 'duckduckgo';
+        if (isInfinite) payload.max_pages = -1;
         btnId = 'socialSearchBtn';
     }
     else if (type === 'crawler') {
         const url = document.getElementById('crawlerUrl').value;
         if (!url.trim()) return alert('Please enter a target URL');
-
         const depth = parseInt(document.getElementById('crawlerDepth').value) || 2;
         const maxPages = parseInt(document.getElementById('crawlerMaxPages').value) || 50;
-
         payload.query = url;
         payload.depth = depth;
-        payload.max_pages = maxPages;
+        payload.max_pages = isInfinite ? -1 : maxPages;
         btnId = 'crawlerBtn';
     }
     else if (type === 'platform') {
         const platformType = document.getElementById('platformType').value;
         const query = document.getElementById('platformQuery').value;
-
         if (!query.trim()) return alert('Please enter a search query');
-
         let target;
         if (platformType === 'yelp') {
             target = 'yelp.com';
@@ -182,11 +175,11 @@ function startSearch(type) {
             target = document.getElementById('platformTarget').value;
             if (!target.trim()) return alert('Please enter a target website');
         }
-
         payload.query = `site:${target} ${query}`;
         payload.platform_type = platformType;
         payload.target_website = target;
         payload.engine = document.getElementById('globalSearchEngine')?.value || 'google';
+        if (isInfinite) payload.max_pages = -1;
         btnId = 'platformBtn';
     }
 
@@ -261,10 +254,16 @@ function updateStatus(data) {
     document.getElementById('emailsFound').textContent = data.total_emails;
 
     let statusText = `Crawling...`;
-    if (data.current_url) {
+
+    if (data.status === 'error' && data.error_message) {
+        statusText = `Error: ${data.error_message}`;
+        const statusEl = document.getElementById('statusText');
+        statusEl.style.color = '#dc3545'; // Danger color
+    } else if (data.current_url) {
         try {
             const url = new URL(data.current_url);
             statusText = `Scanning: ${url.hostname}`;
+            document.getElementById('statusText').style.color = '';
         } catch (e) { }
     }
     document.getElementById('statusText').textContent = statusText;
@@ -276,6 +275,16 @@ function loadResults() {
         .then(res => res.json())
         .then(data => {
             displayResults(data.results);
+
+            // Show error if present
+            const errorAlert = document.getElementById('errorAlert');
+            if (data.search && data.search.error_message) {
+                errorAlert.style.display = 'block';
+                errorAlert.innerHTML = `<i class="fas fa-exclamation-circle"></i> <strong>Error:</strong> ${data.search.error_message}`;
+            } else {
+                errorAlert.style.display = 'none';
+            }
+
             document.getElementById('statusSection').style.display = 'none';
             document.getElementById('resultsSection').style.display = 'block';
             document.getElementById('progressFill').style.width = '100%';

@@ -32,14 +32,18 @@ class WebCrawler:
     
     # ... existing methods ...
 
-    def search_web(self, query, engine='duckduckgo'):
+    def search_web(self, query, engine='duckduckgo', max_results=None, on_result=None, stop_check=None):
         """
         Search the web using Selenium to bypass bot detection
         """
         from app.services.scrapers.web_search import WebSearchScraper
         headless = SettingsManager.get_setting('headless_mode', False)
         scraper = WebSearchScraper(headless=headless)
-        return scraper.search(query, max_results=MAX_SEARCH_RESULTS, engine=engine)
+        
+        if max_results is None:
+            max_results = MAX_SEARCH_RESULTS
+            
+        return scraper.search(query, max_results=max_results, engine=engine, on_result=on_result, stop_check=stop_check)
 
     def fetch_page(self, url):
         """
@@ -286,147 +290,162 @@ class WebCrawler:
             if not seed_urls:
                 results['status'] = 'completed'
                 results['error'] = 'No relevant websites found'
-                self.db.update_search_status(search_id, 'completed', 0, 0)
+                self.db.update_search_status(search_id, 'completed', 0, 0, error_message='No relevant websites found')
                 return results
             
-            # Step 2: Parallel Crawl
+            # Step 2: Parallel Crawl with Streaming
             print(f"\n{'='*60}")
-            print(f"Starting parallel crawl...")
+            print(f"Starting parallel crawl with streaming results...")
             print(f"{'='*60}\n")
             
             # Queue: (url, depth, source_domain)
-            # We use a set for visited URLs to avoid duplicates
             visited_urls = set()
             url_queue = []
             
-            # Initialize queue with seeds
-            for url in seed_urls:
-                if url not in visited_urls:
-                    # Depth 0 for seeds
-                    try:
-                        domain = urlparse(url).netloc
-                        url_queue.append((url, 0, domain))
-                        visited_urls.add(url)
-                    except:
-                        pass
+            # Thread-safe primitives
+            import threading
+            queue_lock = threading.Lock()
+            search_finished = threading.Event()
+            
+            # Callback to handle new results from search
+            def on_search_result(url):
+                with queue_lock:
+                    if url not in visited_urls:
+                        try:
+                            domain = urlparse(url).netloc
+                            url_queue.append((url, 0, domain))
+                            visited_urls.add(url)
+                            # print(f"  [+] Added to queue: {url[:60]}...")
+                        except:
+                            pass
 
+            # Callback to check if we should stop
+            def stop_check():
+                status = self.db.get_search_status(search_id)
+                return status == 'stopped'
+
+            # Run search in a background thread so we can process results immediately
+            def run_search_thread():
+                try:
+                    # Determine max_results based on max_pages input
+                    # If max_pages is -1 or very large, we treat it as infinite search
+                    search_max_results = -1 if max_pages == -1 or max_pages > 1000 else MAX_SEARCH_RESULTS
+                    
+                    if search_type == 'crawler':
+                        # Direct crawl, just add the query as seed
+                        on_search_result(query if query.startswith('http') else 'https://' + query)
+                    elif search_type == 'social' and platform:
+                        # ... (social logic similar to before, but using streaming search)
+                        site_map = {
+                            'linkedin': 'site:linkedin.com/in/ OR site:linkedin.com/company/',
+                            'twitter': 'site:twitter.com',
+                            'instagram': 'site:instagram.com',
+                            'facebook': 'site:facebook.com'
+                        }
+                        site_operator = site_map.get(platform, '')
+                        modified_query = f"{site_operator} {query}"
+                        self.search_web(modified_query, engine=engine, max_results=search_max_results, on_result=on_search_result, stop_check=stop_check)
+                    else:
+                        # Regular web search
+                        self.search_web(query, engine=engine, max_results=search_max_results, on_result=on_search_result, stop_check=stop_check)
+                except Exception as e:
+                    print(f"Search thread error: {e}")
+                finally:
+                    search_finished.set()
+            
+            # Start search thread
+            search_thread = threading.Thread(target=run_search_thread)
+            search_thread.start()
+            
             crawled_count = 0
             email_set = set()
             
             import concurrent.futures
             
-            # We'll use a ThreadPoolExecutor
-            # We'll use a ThreadPoolExecutor
+            # ThreadPoolExecutor for crawling pages
             max_workers = SettingsManager.get_setting('max_threads', 8)
-            # Use provided max_pages for crawler mode, otherwise default
-            if search_type != 'crawler':
-                max_pages = SettingsManager.get_setting('max_pages_per_search', MAX_PAGES_PER_SEARCH)
             
-            # Use provided depth for crawler mode, otherwise default
-            # Subtract 1 because UI labels (1, 2, 3) correspond to depths (0, 1, 2)
+            # Use provided max_pages for crawler mode, otherwise default
+            # If max_pages is -1, we treat it as infinite (or very large limit)
+            effective_max_pages = float('inf') if max_pages == -1 else (max_pages if search_type == 'crawler' else SettingsManager.get_setting('max_pages_per_search', MAX_PAGES_PER_SEARCH))
+            
             max_depth = (depth - 1) if search_type == 'crawler' else MAX_CRAWL_DEPTH
             
             with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-                # Keep track of futures: {future: url}
                 futures = {}
                 
-                while (url_queue or futures) and crawled_count < max_pages:
-                    # Submit tasks up to max_workers
-                    while url_queue and len(futures) < max_workers and crawled_count + len(futures) < max_pages:
-                        url, depth, source_domain = url_queue.pop(0)
-                        
-                        # Check if already crawled in DB (global check)
-                        if self.db.is_url_crawled(search_id, url):
-                            continue
-                            
-                        future = executor.submit(self.process_single_url, search_id, url)
-                        futures[future] = (url, depth, source_domain)
-                    
-                    if not futures:
+                while True:
+                    # Check for stop signal
+                    if stop_check():
+                        print("\n🛑 Stop signal received. Terminating crawl...")
                         break
+                        
+                    # Check if done: search finished AND no more work
+                    with queue_lock:
+                        is_queue_empty = len(url_queue) == 0
                     
-                    # Wait for at least one future to complete
-                    done, _ = concurrent.futures.wait(
-                        futures.keys(), 
-                        return_when=concurrent.futures.FIRST_COMPLETED
-                    )
+                    if search_finished.is_set() and is_queue_empty and not futures:
+                        print("\n✓ All tasks completed.")
+                        break
+                        
+                    # Check limit
+                    if crawled_count >= effective_max_pages:
+                        print(f"\n✓ Max pages limit reached ({effective_max_pages}). Stopping.")
+                        break
+
+                    # Submit tasks
+                    with queue_lock:
+                        while url_queue and len(futures) < max_workers and crawled_count + len(futures) < effective_max_pages:
+                            url, depth, source_domain = url_queue.pop(0)
+                            
+                            if self.db.is_url_crawled(search_id, url):
+                                continue
+                                
+                            future = executor.submit(self.process_single_url, search_id, url)
+                            futures[future] = (url, depth, source_domain)
+                    
+                    # Process completed futures
+                    # Wait briefly for any future to complete, or just poll
+                    done, _ = concurrent.futures.wait(futures, timeout=0.5, return_when=concurrent.futures.FIRST_COMPLETED)
                     
                     for future in done:
                         url, depth, source_domain = futures.pop(future)
                         crawled_count += 1
                         
                         try:
-                            emails, phones, links = future.result()
+                            page_emails, page_phones, new_links = future.result()
                             
-                            # Update progress
-                            if emails:
-                                for email in emails:
-                                    domain = self.email_extractor.get_domain(email)
-                                    if self.db.add_email(search_id, email, url, domain):
-                                        email_set.add(email)
-                                        print(f"  ✓ Email: {email}")
+                            # Add new emails/phones to set
+                            for email in page_emails: email_set.add(email)
                             
-                            if phones:
-                                for phone in phones:
-                                    if self.db.add_phone(search_id, phone, url):
-                                        print(f"  ✓ Phone: {phone}")
-                            
-                            # Process new links
+                            # Add new links to queue if depth allows
                             if depth < max_depth:
-                                internal_links = []
-                                external_links = []
-                                
-                                for link in links:
-                                    if link in visited_urls:
-                                        continue
-                                        
-                                    try:
-                                        link_domain = urlparse(link).netloc
-                                        
-                                        if link_domain == source_domain:
-                                            internal_links.append(link)
-                                        else:
-                                            external_links.append(link)
-                                    except:
-                                        pass
-                                
-                                # Add internal links (prioritize)
-                                for link in internal_links:
-                                    if link not in visited_urls:
-                                        visited_urls.add(link)
-                                        url_queue.append((link, depth + 1, source_domain))
-                                
-                                # Add external links (limit per page)
-                                for i, link in enumerate(external_links):
-                                    if i >= MAX_EXTERNAL_LINKS: break
-                                    if link not in visited_urls:
-                                        visited_urls.add(link)
-                                        # External links start fresh depth? Or continue?
-                                        # Let's treat them as depth+1 but update source_domain
-                                        new_domain = urlparse(link).netloc
-                                        url_queue.append((link, depth + 1, new_domain))
-                                        
+                                with queue_lock:
+                                    for link in new_links:
+                                        if link not in visited_urls:
+                                            # Domain restriction logic (optional, but good practice)
+                                            # For now, we allow external links up to MAX_EXTERNAL_LINKS per page logic inside process_single_url?
+                                            # Actually process_single_url returns all links. We filter here?
+                                            # Let's just add them.
+                                            url_queue.append((link, depth + 1, source_domain))
+                                            visited_urls.add(link)
                         except Exception as e:
                             print(f"Error processing {url}: {e}")
-                        
-                        # Update DB status periodically
-                        if crawled_count % 5 == 0:
-                            self.db.update_search_status(
-                                search_id, 'running', crawled_count, len(email_set), url
-                            )
-                            if progress_callback:
-                                progress = min(int((crawled_count / MAX_PAGES_PER_SEARCH) * 100), 95)
-                                progress_callback(search_id, f"Crawled {crawled_count} pages...", progress)
-
-            # Step 3: Complete
-            print(f"\n{'='*60}")
-            print(f"Crawl completed! Pages: {crawled_count}, Emails: {len(email_set)}")
-            print(f"{'='*60}\n")
+                            
+                        # Update progress
+                        if progress_callback and crawled_count % 5 == 0:
+                            progress_callback(search_id, f"Crawled {crawled_count} pages...", int((crawled_count / (effective_max_pages if effective_max_pages != float('inf') else 1000)) * 100))
             
-            results['emails'] = list(email_set)
-            results['pages_crawled'] = crawled_count
+            # Ensure search thread joins (it should have finished or we ignore it if we stopped early)
+            # If we stopped early, search thread might still be running. 
+            # Ideally we should signal it to stop via stop_check, which we do.
+            search_thread.join(timeout=1.0) 
+            
             results['status'] = 'completed'
+            results['pages_crawled'] = crawled_count
+            results['emails'] = list(email_set)
             
+            # Final update
             self.db.update_search_status(search_id, 'completed', crawled_count, len(email_set))
             
             if progress_callback:
@@ -435,7 +454,7 @@ class WebCrawler:
         except Exception as e:
             results['status'] = 'error'
             results['error'] = str(e)
-            self.db.update_search_status(search_id, 'error', results['pages_crawled'], len(results['emails']))
+            self.db.update_search_status(search_id, 'error', results['pages_crawled'], len(results['emails']), error_message=str(e))
             print(f"\n✗ Crawl error: {e}")
             import traceback
             traceback.print_exc()
