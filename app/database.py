@@ -145,6 +145,38 @@ class Database:
             if not cursor.fetchone():
                 cursor.execute("ALTER TABLE searches ADD COLUMN engine VARCHAR(50) DEFAULT 'duckduckgo'")
                 print("Added engine column")
+            
+            # Add business columns to emails table
+            cursor.execute("SHOW COLUMNS FROM emails LIKE 'business_name'")
+            if not cursor.fetchone():
+                cursor.execute("ALTER TABLE emails ADD COLUMN business_name VARCHAR(255)")
+                print("Added business_name to emails")
+            
+            cursor.execute("SHOW COLUMNS FROM emails LIKE 'website'")
+            if not cursor.fetchone():
+                cursor.execute("ALTER TABLE emails ADD COLUMN website TEXT")
+                print("Added website to emails")
+            
+            cursor.execute("SHOW COLUMNS FROM emails LIKE 'address'")
+            if not cursor.fetchone():
+                cursor.execute("ALTER TABLE emails ADD COLUMN address TEXT")
+                print("Added address to emails")
+            
+            # Add business columns to phones table
+            cursor.execute("SHOW COLUMNS FROM phones LIKE 'business_name'")
+            if not cursor.fetchone():
+                cursor.execute("ALTER TABLE phones ADD COLUMN business_name VARCHAR(255)")
+                print("Added business_name to phones")
+            
+            cursor.execute("SHOW COLUMNS FROM phones LIKE 'website'")
+            if not cursor.fetchone():
+                cursor.execute("ALTER TABLE phones ADD COLUMN website TEXT")
+                print("Added website to phones")
+            
+            cursor.execute("SHOW COLUMNS FROM phones LIKE 'address'")
+            if not cursor.fetchone():
+                cursor.execute("ALTER TABLE phones ADD COLUMN address TEXT")
+                print("Added address to phones")
                 
             conn.commit()
         except Error as e:
