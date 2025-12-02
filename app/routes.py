@@ -14,7 +14,7 @@ crawler = WebCrawler()
 # Store active crawl threads
 active_crawls = {}
 
-def run_crawl(search_id, query, use_google_maps=False, search_type='web', platform=None, engine='duckduckgo', page_count=3, depth=2, max_pages=50, platform_type=None, target_website=None):
+def run_crawl(search_id, query, use_google_maps=False, search_type='web', platform=None, engine='duckduckgo', page_count=3, depth=2, max_pages=50, platform_type=None, target_website=None, scrape_emails=True, scrape_phones=True):
     """Run crawl in background thread"""
     def progress_callback(sid, message, percent):
         print(f"[{sid}] {percent}% - {message}")
@@ -31,7 +31,9 @@ def run_crawl(search_id, query, use_google_maps=False, search_type='web', platfo
         depth=depth,
         max_pages=max_pages,
         platform_type=platform_type,
-        target_website=target_website
+        target_website=target_website,
+        scrape_emails=scrape_emails,
+        scrape_phones=scrape_phones
     )
     
     # Remove from active crawls when done
@@ -159,8 +161,10 @@ def start_search():
     page_count = data.get('page_count', 3)
     depth = data.get('depth', 2)
     max_pages = data.get('max_pages', 50)
-    platform_type = data.get('platform_type')  # NEW: Get platform type (e.g., 'yelp')
-    target_website = data.get('target_website')  # NEW: Get target website
+    platform_type = data.get('platform_type')
+    target_website = data.get('target_website')
+    scrape_emails = data.get('scrape_emails', True)  # NEW: Default to True
+    scrape_phones = data.get('scrape_phones', True)  # NEW: Default to True
     
     # Legacy support
     use_google_maps = data.get('use_google_maps', False)
@@ -170,13 +174,15 @@ def start_search():
     if not query:
         return jsonify({'error': 'Query is required'}), 400
     
-    # Debug logging for Yelp
+    # Debug logging
     print(f"\n{'='*60}")
     print(f"DEBUG - Start Search:")
     print(f"  search_type: {search_type}")
     print(f"  platform_type: {platform_type}")
     print(f"  target_website: {target_website}")
     print(f"  query: {query}")
+    print(f"  scrape_emails: {scrape_emails}")
+    print(f"  scrape_phones: {scrape_phones}")
     print(f"{'='*60}\n")
     
     # Create search record
@@ -194,8 +200,10 @@ def start_search():
             'page_count': page_count,
             'depth': depth,
             'max_pages': max_pages,
-            'platform_type': platform_type,  # NEW: Pass platform type
-            'target_website': target_website  # NEW: Pass target website
+            'platform_type': platform_type,
+            'target_website': target_website,
+            'scrape_emails': scrape_emails,  # NEW
+            'scrape_phones': scrape_phones   # NEW
         }
     )
     thread.daemon = True

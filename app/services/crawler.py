@@ -85,7 +85,7 @@ class WebCrawler:
             return [], [], []
 
 
-    def crawl(self, search_id, query, progress_callback=None, use_google_maps=False, search_type='web', platform=None, engine=None, page_count=3, depth=2, max_pages=50, platform_type=None, target_website=None):
+    def crawl(self, search_id, query, progress_callback=None, use_google_maps=False, search_type='web', platform=None, engine=None, page_count=3, depth=2, max_pages=50, platform_type=None, target_website=None, scrape_emails=True, scrape_phones=True):
         """
         Main crawl function with Parallel Processing
         """
@@ -415,26 +415,43 @@ class WebCrawler:
                         try:
                             page_emails, page_phones, new_links = future.result()
                             
-                            # Add new emails/phones to set
-                            for email in page_emails: email_set.add(email)
+                            # Show emails to user FIRST (print to console)
+                            if page_emails:
+                                for email in page_emails:
+                                    print(f"  ✓ Email found: {email}")
+                            
+                            # Show phones to user FIRST (print to console)
+                            if page_phones:
+                                for phone in page_phones:
+                                    print(f"  ✓ Phone found: {phone}")
+                            
+                            # THEN save emails to database
+                            if page_emails:
+                                for email in page_emails:
+                                    domain = self.email_extractor.get_domain(email)
+                                    if self.db.add_email(search_id, email, url, domain):
+                                        email_set.add(email)
+                            
+                            # THEN save phones to database
+                            if page_phones:
+                                for phone in page_phones:
+                                    self.db.add_phone(search_id, phone, url)
                             
                             # Add new links to queue if depth allows
                             if depth < max_depth:
                                 with queue_lock:
                                     for link in new_links:
                                         if link not in visited_urls:
-                                            # Domain restriction logic (optional, but good practice)
-                                            # For now, we allow external links up to MAX_EXTERNAL_LINKS per page logic inside process_single_url?
-                                            # Actually process_single_url returns all links. We filter here?
-                                            # Let's just add them.
                                             url_queue.append((link, depth + 1, source_domain))
                                             visited_urls.add(link)
                         except Exception as e:
                             print(f"Error processing {url}: {e}")
                             
-                        # Update progress
-                        if progress_callback and crawled_count % 5 == 0:
-                            progress_callback(search_id, f"Crawled {crawled_count} pages...", int((crawled_count / (effective_max_pages if effective_max_pages != float('inf') else 1000)) * 100))
+                        # Update progress and database status periodically
+                        if crawled_count % 5 == 0:
+                            self.db.update_search_status(search_id, 'running', crawled_count, len(email_set), url)
+                            if progress_callback:
+                                progress_callback(search_id, f"Crawled {crawled_count} pages...", int((crawled_count / (effective_max_pages if effective_max_pages != float('inf') else 1000)) * 100))
             
             # Ensure search thread joins (it should have finished or we ignore it if we stopped early)
             # If we stopped early, search thread might still be running. 

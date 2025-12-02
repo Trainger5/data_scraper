@@ -190,10 +190,15 @@ class WebSearchScraper:
             self.setup_driver()
         
         links = []
+        is_infinite = (max_results == -1)
         
         try:
             print(f"\n{'='*60}")
             print(f"🦆 Searching DuckDuckGo for: '{query}'")
+            if is_infinite:
+                print("  Mode: INFINITE (will run until stopped)")
+            else:
+                print(f"  Max Results: {max_results}")
             print(f"{'='*60}\n")
             
             self.driver.get(f"https://duckduckgo.com/?q={query.replace(' ', '+')}&t=h_&ia=web")
@@ -206,7 +211,15 @@ class WebSearchScraper:
             except:
                 pass
             
-            while len(links) < max_results:
+            while True:
+                if stop_check and stop_check():
+                    print("\n🛑 Stop signal received. Stopping DuckDuckGo search...")
+                    break
+                
+                if not is_infinite and len(links) >= max_results:
+                    print(f"\n✓ Target result count reached ({max_results}). Stopping.")
+                    break
+                
                 # Scroll to bottom
                 self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                 time.sleep(2)
@@ -226,12 +239,12 @@ class WebSearchScraper:
                             if href and validators.url(href) and 'duckduckgo' not in href:
                                 if href not in links:
                                     links.append(href)
+                                    print(f"  ✓ Found: {href[:60]}...")
+                                    if on_result:
+                                        on_result(href)
                         except:
                             continue
                 
-                if len(links) >= max_results:
-                    break
-                    
                 # If no new links found after scroll and click attempt, stop
                 if len(links) == current_count:
                     print("  ⚠ No new results found, stopping.")
@@ -255,7 +268,7 @@ class WebSearchScraper:
                 
         return links
 
-    def search_google(self, query, max_results=20):
+    def search_google(self, query, max_results=20, on_result=None, stop_check=None):
         """Search Google using Selenium with Pagination"""
         if not self.driver:
             self.setup_driver()
@@ -263,13 +276,20 @@ class WebSearchScraper:
         links = []
         page = 1
         
+        # Support infinite mode
+        is_infinite = (max_results == -1)
+        
         try:
             print(f"\n{'='*60}")
             print(f"🔍 Searching Google for: '{query}'")
+            if is_infinite:
+                print("  Mode: INFINITE (will run until stopped)")
+            else:
+                print(f"  Max Results: {max_results}")
             print(f"{'='*60}\n")
             
             # Navigate to Google
-            self.driver.get(f"https://www.google.com/search?q={query.replace(' ', '+')}&num=100") # Try to get 100 results first
+            self.driver.get(f"https://www.google.com/search?q={query.replace(' ', '+')}&num=100")
             
             # Wait for results
             print("⏳ Waiting for results to load...")
@@ -290,7 +310,17 @@ class WebSearchScraper:
             except:
                 pass
             
-            while len(links) < max_results:
+            while True:
+                # Check stop signal
+                if stop_check and stop_check():
+                    print("\n🛑 Stop signal received. Stopping Google search...")
+                    break
+                
+                # Check limit (skip if infinite)
+                if not is_infinite and len(links) >= max_results:
+                    print(f"\n✓ Target result count reached ({max_results}). Stopping.")
+                    break
+                
                 # Scroll to bottom to ensure all lazy-loaded elements are visible
                 self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                 time.sleep(1)
@@ -316,18 +346,21 @@ class WebSearchScraper:
                         except:
                             continue
                 
-                # Add new links
+                # Add new links and call callback
+                new_count = 0
                 for link in current_page_links:
-                    if len(links) >= max_results:
+                    if not is_infinite and len(links) >= max_results:
                         break
-                    links.append(link)
-                    print(f"  ✓ Found: {link[:60]}...")
+                    if link not in links:
+                        links.append(link)
+                        new_count += 1
+                        print(f"  ✓ Found: {link[:60]}...")
+                        # Call callback immediately if provided
+                        if on_result:
+                            on_result(link)
                 
-                print(f"  -- Page {page}: Found {len(current_page_links)} new links (Total: {len(links)})")
+                print(f"  -- Page {page}: Found {new_count} new links (Total: {len(links)})")
                 
-                if len(links) >= max_results:
-                    break
-                    
                 # Try to go to next page
                 if not self._click_next_page('google'):
                     print("  ⚠ No more pages or 'Next' button not found.")
@@ -351,23 +384,36 @@ class WebSearchScraper:
                 
         return links
 
-    def search_bing(self, query, max_results=20):
+    def search_bing(self, query, max_results=20, on_result=None, stop_check=None):
         """Search Bing using Selenium with Pagination"""
         if not self.driver:
             self.setup_driver()
         
         links = []
         page = 1
+        is_infinite = (max_results == -1)
         
         try:
             print(f"\n{'='*60}")
             print(f"🅱️ Searching Bing for: '{query}'")
+            if is_infinite:
+                print("  Mode: INFINITE (will run until stopped)")
+            else:
+                print(f"  Max Results: {max_results}")
             print(f"{'='*60}\n")
             
             self.driver.get(f"https://www.bing.com/search?q={query.replace(' ', '+')}")
             time.sleep(3)
             
-            while len(links) < max_results:
+            while True:
+                if stop_check and stop_check():
+                    print("\n🛑 Stop signal received. Stopping Bing search...")
+                    break
+                
+                if not is_infinite and len(links) >= max_results:
+                    print(f"\n✓ Target result count reached ({max_results}). Stopping.")
+                    break
+                
                 self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                 time.sleep(1)
                 
@@ -385,12 +431,17 @@ class WebSearchScraper:
                         except:
                             continue
                 
+                new_count = 0
                 for link in current_page_links:
-                    if len(links) >= max_results: break
-                    links.append(link)
-                    print(f"  ✓ Found: {link[:60]}...")
+                    if not is_infinite and len(links) >= max_results: break
+                    if link not in links:
+                        links.append(link)
+                        new_count += 1
+                        print(f"  ✓ Found: {link[:60]}...")
+                        if on_result:
+                            on_result(link)
                 
-                if len(links) >= max_results: break
+                print(f"  -- Page {page}: Found {new_count} new links (Total: {len(links)})")
                 
                 if not self._click_next_page('bing'):
                     print("  ⚠ No more pages.")
@@ -413,23 +464,36 @@ class WebSearchScraper:
                 
         return links
 
-    def search_yahoo(self, query, max_results=20):
+    def search_yahoo(self, query, max_results=20, on_result=None, stop_check=None):
         """Search Yahoo using Selenium with Pagination"""
         if not self.driver:
             self.setup_driver()
         
         links = []
         page = 1
+        is_infinite = (max_results == -1)
         
         try:
             print(f"\n{'='*60}")
             print(f"🟣 Searching Yahoo for: '{query}'")
+            if is_infinite:
+                print("  Mode: INFINITE (will run until stopped)")
+            else:
+                print(f"  Max Results: {max_results}")
             print(f"{'='*60}\n")
             
             self.driver.get(f"https://search.yahoo.com/search?p={query.replace(' ', '+')}")
             time.sleep(3)
             
-            while len(links) < max_results:
+            while True:
+                if stop_check and stop_check():
+                    print("\n🛑 Stop signal received. Stopping Yahoo search...")
+                    break
+                
+                if not is_infinite and len(links) >= max_results:
+                    print(f"\n✓ Target result count reached ({max_results}). Stopping.")
+                    break
+                
                 self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                 time.sleep(1)
                 
@@ -445,12 +509,17 @@ class WebSearchScraper:
                     except:
                         continue
                 
+                new_count = 0
                 for link in current_page_links:
-                    if len(links) >= max_results: break
-                    links.append(link)
-                    print(f"  ✓ Found: {link[:60]}...")
+                    if not is_infinite and len(links) >= max_results: break
+                    if link not in links:
+                        links.append(link)
+                        new_count += 1
+                        print(f"  ✓ Found: {link[:60]}...")
+                        if on_result:
+                            on_result(link)
                 
-                if len(links) >= max_results: break
+                print(f"  -- Page {page}: Found {new_count} new links (Total: {len(links)})")
                 
                 if not self._click_next_page('yahoo'):
                     print("  ⚠ No more pages.")

@@ -117,12 +117,18 @@ function startSearch(type) {
     // Global Infinite Toggle
     const isInfinite = document.getElementById('globalInfiniteScraping')?.checked;
 
+    // Get email/phone filter settings (default to true if checkboxes don't exist yet)
+    const scrapeEmails = document.getElementById('scrapeEmails')?.checked !== false;
+    const scrapePhones = document.getElementById('scrapePhones')?.checked !== false;
+
     if (type === 'web') {
         const query = document.getElementById('webSearchInput').value;
         if (!query.trim()) return alert('Please enter a search query');
         const engine = document.getElementById('globalSearchEngine')?.value || 'duckduckgo';
         payload.query = query;
         payload.engine = engine;
+        payload.scrape_emails = scrapeEmails;
+        payload.scrape_phones = scrapePhones;
         if (isInfinite) payload.max_pages = -1;
         btnId = 'webSearchBtn';
     }
@@ -229,7 +235,7 @@ function startPolling() {
             .then(data => {
                 updateStatus(data);
 
-                if (data.status === 'completed' || data.status === 'error') {
+                if (data.status === 'completed' || data.status === 'error' || data.status === 'stopped') {
                     stopPolling();
                     loadResults();
                 }
@@ -243,6 +249,42 @@ function stopPolling() {
         clearInterval(pollInterval);
         pollInterval = null;
     }
+}
+
+function stopCrawl() {
+    if (!currentSearchId) {
+        alert('No active search to stop');
+        return;
+    }
+
+    // Disable stop button to prevent multiple clicks
+    const stopBtn = document.getElementById('stopCrawlBtn');
+    if (stopBtn) {
+        stopBtn.disabled = true;
+        stopBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Stopping...';
+    }
+
+    // Call the stop endpoint
+    fetch(`${API_BASE}/stop/${currentSearchId}`, {
+        method: 'POST'
+    })
+        .then(res => res.json())
+        .then(data => {
+            console.log('Stop response:', data);
+            // Stop polling and load results
+            stopPolling();
+            setTimeout(() => {
+                loadResults();
+            }, 1000); // Give backend a second to finish cleanly
+        })
+        .catch(error => {
+            console.error('Error stopping search:', error);
+            alert('Failed to stop search: ' + error.message);
+            if (stopBtn) {
+                stopBtn.disabled = false;
+                stopBtn.innerHTML = '<i class="fas fa-stop"></i> Stop';
+            }
+        });
 }
 
 function updateStatus(data) {
