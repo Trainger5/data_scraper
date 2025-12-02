@@ -166,12 +166,8 @@ class WebCrawler:
                                 email_count += 1
                     
                     # Mark search as completed
-                    total_records = 0
-                    if scrape_emails:
-                        total_records += email_count
-                    if scrape_phones:
-                        total_records += phone_count
-                    self.db.update_search_status(search_id, 'completed', 0, total_records)
+                    email_total = email_count if scrape_emails else 0
+                    self.db.update_search_status(search_id, 'completed', 0, email_total)
                     
                     results['status'] = 'completed'
                     results['emails'] = [b['email'] for b in business_data if b.get('email')] if scrape_emails else []
@@ -463,8 +459,7 @@ class WebCrawler:
                             
                         # Update progress and database status periodically
                         if crawled_count % 5 == 0:
-                            total_records = len(email_set) + len(phone_set)
-                            self.db.update_search_status(search_id, 'running', crawled_count, total_records, url)
+                            self.db.update_search_status(search_id, 'running', crawled_count, len(email_set), url)
                             if progress_callback:
                                 progress_callback(search_id, f"Crawled {crawled_count} pages...", int((crawled_count / (effective_max_pages if effective_max_pages != float('inf') else 1000)) * 100))
             
@@ -476,14 +471,14 @@ class WebCrawler:
             results['pages_crawled'] = crawled_count
             results['emails'] = list(email_set) if scrape_emails else []
             results['phones'] = list(phone_set) if scrape_phones else []
-            total_records = len(email_set) + len(phone_set)
+            email_total = len(email_set)
             
             if stop_requested.is_set():
                 results['status'] = 'stopped'
-                self.db.update_search_status(search_id, 'stopped', crawled_count, total_records)
+                self.db.update_search_status(search_id, 'stopped', crawled_count, email_total)
             else:
                 results['status'] = 'completed'
-                self.db.update_search_status(search_id, 'completed', crawled_count, total_records)
+                self.db.update_search_status(search_id, 'completed', crawled_count, email_total)
             
             if progress_callback:
                 progress_callback(search_id, 'Completed!', 100)
@@ -491,8 +486,7 @@ class WebCrawler:
         except Exception as e:
             results['status'] = 'error'
             results['error'] = str(e)
-            total_records = len(email_set) + len(phone_set)
-            self.db.update_search_status(search_id, 'error', results['pages_crawled'], total_records, error_message=str(e))
+            self.db.update_search_status(search_id, 'error', results['pages_crawled'], len(email_set), error_message=str(e))
             print(f"\n✗ Crawl error: {e}")
             import traceback
             traceback.print_exc()

@@ -330,6 +330,7 @@ def get_status(search_id):
         'status': search['status'],
         'pages_crawled': search['pages_crawled'],
         'total_emails': search['total_emails'],
+        'total_phones': db.get_phone_count(search_id),
         'current_url': search.get('current_url'),
         'is_active': search_id in active_crawls
     })

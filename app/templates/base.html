@@ -195,6 +195,24 @@
             background: #f8fafc;
         }
 
+        .app-disabled .sidebar,
+        .app-disabled .view-pane,
+        .app-disabled #resultsSection {
+            pointer-events: none;
+            opacity: 0.5;
+        }
+
+        .app-disabled #statusSection {
+            pointer-events: auto;
+            opacity: 1;
+        }
+
+        .app-disabled #stopCrawlBtn,
+        .app-disabled #stopCrawlBtn * {
+            pointer-events: auto;
+            opacity: 1;
+        }
+
         .selector-label {
             display: flex;
             align-items: center;

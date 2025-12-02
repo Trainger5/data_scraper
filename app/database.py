@@ -438,6 +438,18 @@ class Database:
         result = cursor.fetchone()
         conn.close()
         return result['count']
+
+    def get_phone_count(self, search_id):
+        """Get total unique phones for a search"""
+        conn = self.get_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            'SELECT COUNT(DISTINCT phone) as count FROM phones WHERE search_id = %s',
+            (search_id,)
+        )
+        result = cursor.fetchone()
+        conn.close()
+        return result['count']
     
     def delete_search(self, search_id):
         """Delete search and all associated data"""

@@ -8,12 +8,54 @@ const POLL_INTERVAL = 2000;
 
 let currentSearchId = null;
 let pollInterval = null;
+let isSearchRunning = false;
+let stopButtonDefaultHTML = null;
+
+const disableDuringRunSelectors = [
+    '#webSearchInput', '#webSearchBtn',
+    '#mapsBusinessType', '#mapsLocation', '#mapsPageCount', '#mapsCustomPageCount', '#mapsSearchBtn',
+    '#socialSearchInput', '#socialPlatform', '#socialSearchBtn',
+    '#crawlerUrl', '#crawlerDepth', '#crawlerMaxPages', '#crawlerBtn',
+    '#platformType', '#platformQuery', '#platformTarget', '#platformBtn',
+    '#globalSearchEngine', '#globalInfiniteScraping',
+    '#scrapeEmails', '#scrapePhones'
+];
+
+function setControlsDisabled(disabled) {
+    disableDuringRunSelectors.forEach(selector => {
+        const elements = document.querySelectorAll(selector);
+        if (!elements || elements.length === 0) return;
+        elements.forEach(el => {
+            if ('disabled' in el) {
+                el.disabled = disabled;
+            }
+        });
+    });
+}
+
+function setRunningState(running) {
+    isSearchRunning = running;
+    setControlsDisabled(running);
+    document.body.classList.toggle('app-disabled', running);
+
+    const stopBtn = document.getElementById('stopCrawlBtn');
+    if (stopBtn) {
+        if (stopButtonDefaultHTML === null) {
+            stopButtonDefaultHTML = stopBtn.innerHTML;
+        }
+        stopBtn.disabled = !running;
+        if (!running) {
+            stopBtn.innerHTML = stopButtonDefaultHTML;
+        }
+    }
+}
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     console.log("Dashboard app loaded");
     setupView();
     loadHistory();
+    setRunningState(false);
 
     // Enter key support for inputs
     ['webSearchInput', 'mapsLocation', 'socialSearchInput', 'mapsCustomPageCount'].forEach(id => {
@@ -111,6 +153,11 @@ function setupView() {
 
 // Start Search
 function startSearch(type) {
+    if (isSearchRunning) {
+        alert('A crawl is already running. Please stop it before starting a new one.');
+        return;
+    }
+
     let payload = { search_type: type };
     let btnId = '';
 
@@ -189,11 +236,17 @@ function startSearch(type) {
         btnId = 'platformBtn';
     }
 
+    if (!btnId) return;
+
+    setRunningState(true);
+
     // UI Feedback
     const btn = document.getElementById(btnId);
-    const originalContent = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Starting...';
+    const originalContent = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Starting...';
+    }
 
     // API Call
     fetch(`${API_BASE}/search`, {
@@ -209,13 +262,16 @@ function startSearch(type) {
             showStatusSection();
             startPolling();
 
-            btn.disabled = false;
-            btn.innerHTML = originalContent;
+            if (btn) {
+                btn.innerHTML = originalContent;
+            }
         })
         .catch(error => {
             alert('Error: ' + error.message);
-            btn.disabled = false;
-            btn.innerHTML = originalContent;
+            setRunningState(false);
+            if (btn) {
+                btn.innerHTML = originalContent;
+            }
         });
 }
 
@@ -236,6 +292,7 @@ function startPolling() {
                 updateStatus(data);
 
                 if (data.status === 'completed' || data.status === 'error' || data.status === 'stopped') {
+                    setRunningState(false);
                     stopPolling();
                     loadResults();
                 }
@@ -275,6 +332,7 @@ function stopCrawl() {
             stopPolling();
             setTimeout(() => {
                 loadResults();
+                setRunningState(false);
             }, 1000); // Give backend a second to finish cleanly
         })
         .catch(error => {
@@ -282,7 +340,7 @@ function stopCrawl() {
             alert('Failed to stop search: ' + error.message);
             if (stopBtn) {
                 stopBtn.disabled = false;
-                stopBtn.innerHTML = '<i class="fas fa-stop"></i> Stop';
+                stopBtn.innerHTML = stopButtonDefaultHTML || '<i class="fas fa-stop"></i> Stop';
             }
         });
 }
@@ -294,6 +352,10 @@ function updateStatus(data) {
 
     document.getElementById('pagesCrawled').textContent = data.pages_crawled;
     document.getElementById('emailsFound').textContent = data.total_emails;
+    const phonesEl = document.getElementById('phonesFound');
+    if (phonesEl) {
+        phonesEl.textContent = data.total_phones ?? 0;
+    }
 
     let statusText = `Crawling...`;
 
@@ -502,6 +564,12 @@ function stopCrawl() {
     if (!confirm('Stop crawling and show current results?')) return;
 
     // Call stop API
+    const stopBtn = document.getElementById('stopCrawlBtn');
+    if (stopBtn) {
+        stopBtn.disabled = true;
+        stopBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Stopping...';
+    }
+
     fetch(`${API_BASE}/stop/${currentSearchId}`, {
         method: 'POST'
     })
@@ -510,10 +578,18 @@ function stopCrawl() {
             console.log('Stop requested:', data);
             stopPolling();
             loadResults();
+            setRunningState(false);
         })
         .catch(error => {
             console.error('Error stopping crawl:', error);
             alert('Error stopping crawl: ' + error.message);
+            if (stopBtn && stopButtonDefaultHTML !== null) {
+                stopBtn.disabled = false;
+                stopBtn.innerHTML = stopButtonDefaultHTML;
+            } else if (stopBtn) {
+                stopBtn.disabled = false;
+                stopBtn.innerHTML = '<i class="fas fa-stop"></i> Stop';
+            }
         });
 }
 
